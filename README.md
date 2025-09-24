@@ -1,6 +1,6 @@
 
 
-> Note: frontend backend folder dipisah, kalau mau push usahakan buat branch dulu. tq
+> Note: frontend backend folder dipisah, kalau mau push usahakan buat branch dulu. thankyou
 
 # 📚 AutoEssayGrader
 
