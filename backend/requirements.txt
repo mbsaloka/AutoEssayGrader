@@ -1,0 +1,8 @@
+fastapi[all]
+sqlmodel
+asyncpg
+fastapi-users[sqlalchemy]==13.0.0
+fastapi-users-db-sqlalchemy==6.0.1
+pydantic
+python-multipart
+python-dotenv
