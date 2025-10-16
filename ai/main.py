@@ -1,6 +1,7 @@
 import fitz
 import os
 import cv2
+import re
 from image_processing import correct_perspective, detect_answer_boxes
 from ocr_processing import segment_and_ocr
 
@@ -22,7 +23,7 @@ def pdf_to_images(pdf_path, output_folder="output_images"):
 
 
 def main():
-    pdf_path = "files/test4.pdf"
+    pdf_path = "files/test10.pdf"
 
     print("[INFO] Mengubah PDF ke gambar...")
     images = pdf_to_images(pdf_path)
@@ -43,7 +44,9 @@ def main():
 
         # 4. OCR tiap kotak jawaban
         for i, crop in enumerate(answer_boxes):
-            text = segment_and_ocr(crop)
+            text = segment_and_ocr(crop, debug_dir=f"debug_{i}")
+            text = re.sub(r'\n+', '\n', text).strip()  
+            text += "\n"
             all_text.append(text)
  
     final_text = "\n".join(all_text)

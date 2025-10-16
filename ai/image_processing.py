@@ -198,18 +198,18 @@ def detect_answer_boxes(image_input, max_boxes=4, visualize=False):
 
     h_img, w_img = image.shape[:2]
     img_area = h_img * w_img
-    min_area, max_area = img_area * 0.1, img_area * 0.7  # ⬅️ lebih longgar
+    min_area, max_area = img_area * 0.1, img_area * 0.3
 
     boxes_detected = []
     for i, cnt in enumerate(contours):
-        approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
+        approx = cv2.approxPolyDP(cnt, 0.3 * cv2.arcLength(cnt, True), True)
         if len(approx) <= 4: 
             x, y, w, h = cv2.boundingRect(approx)
             area = w * h
             if min_area < area < max_area:
                 boxes_detected.append((x, y, w, h, area))
 
-    print(f"✅ [Boxes] Jumlah kotak terdeteksi: {len(boxes_detected)}")
+    # print(f"✅ [Boxes] Jumlah kotak terdeteksi: {len(boxes_detected)}")
 
     # Seleksi non-overlap
     unique_boxes = []
@@ -226,7 +226,7 @@ def detect_answer_boxes(image_input, max_boxes=4, visualize=False):
     for (x, y, w, h, area) in unique_boxes:
         # Padding ke dalam sebesar 500px
         padding_x = 50
-        padding_y = 40
+        padding_y = 50
 
         # Batasi padding agar tidak lebih dari setengah ukuran kotak
         pad_x = min(padding_x, w // 2 - 1)
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     
     print("\n===== MENDETEKSI KOTAK JAWABAN =====")
     # Deteksi kotak jawaban dari gambar yang sudah diproses
-    answer_boxes = detect_answer_boxes(preprocessed_img, max_boxes=2, visualize=True)
+    answer_boxes = detect_answer_boxes(preprocessed_img, max_boxes=5, visualize=True)
     
     print(f"\nProses Selesai. Ditemukan {len(answer_boxes)} kotak jawaban.")
 
