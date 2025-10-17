@@ -4,17 +4,28 @@ import requests
 import json
 import re
 import time
-from typing import Optional, Dict
-from bert_score import score
+from typing import Optional
+import torch
+from sentence_transformers import SentenceTransformer, util
 
 # === Konfigurasi ===
 OLLAMA_URL = "http://localhost:11434/api/generate"
+USE_LONG_PROMPT = True
 # DEFAULT_MODEL = "mistral:7b-instruct"
+# DEFAULT_MODEL = "llama3.2:3b"
 # DEFAULT_MODEL = "llama3.2:1b"
-DEFAULT_MODEL = "phi3:mini"
+# DEFAULT_MODEL = "phi3:mini"
 # DEFAULT_MODEL = "llama3:8b"
+# DEFAULT_MODEL = "qwen2.5:7b-instruct"
+DEFAULT_MODEL = "qwen2.5:3b-instruct"
+# DEFAULT_MODEL = "gemma:7b"
 
-app = FastAPI(title="Ollama Hybrid Auto-Grader", version="0.2")
+# Path lokal model MiniLM
+EMBEDDING_MODEL_PATH = "/home/mbsaloka/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
+DEVICE_MODE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# === Inisialisasi Aplikasi ===
+app = FastAPI(title="Ollama Hybrid Auto-Grader", version="0.3")
 
 # === Schema Request ===
 class GradeRequest(BaseModel):
@@ -25,7 +36,40 @@ class GradeRequest(BaseModel):
 
 # === 1️⃣ Prompt Rubric-based ===
 def build_prompt(answer_key: str, student_answer: str) -> str:
-    prompt = f"""
+    short_prompt = f"""
+Anda adalah sistem penilai jawaban esai berdasarkan rubrik berikut.
+
+Rubrik:
+1. Pemahaman Konsep (0–100)
+2. Kelengkapan Jawaban (0–100)
+3. Kejelasan Bahasa (0–100)
+4. Analisis/Argumen (0–100)
+
+Kunci Jawaban:
+{answer_key}
+
+Jawaban Mahasiswa:
+{student_answer}
+
+### PETUNJUK OUTPUT
+- Keluarkan **hanya satu blok JSON valid**, mulai dengan `{{` dan diakhiri dengan `}}`.
+- Semua nilai numerik berupa desimal dengan satu angka di belakang koma, misal 87.5.
+- Wajib menyertakan kunci: "pemahaman", "kelengkapan", "kejelasan", "analisis", "rata_rata", "feedback".
+- "rata_rata" = (pemahaman + kelengkapan + kejelasan + analisis)/4
+- "feedback" = 1–2 kalimat, sebutkan **1 kekuatan dan 1 kelemahan spesifik** dibanding kunci jawaban. Jangan menyalin jawaban mahasiswa.
+
+Contoh output:
+{{
+  "pemahaman": 92.5,
+  "kelengkapan": 90.0,
+  "kejelasan": 95.0,
+  "analisis": 88.5,
+  "rata_rata": 91.5,
+  "feedback": "Jawaban sangat jelas dan lengkap, namun analisis mekanisme masih kurang mendetail."
+}}
+"""
+
+    long_prompt = f"""
 PENTING:
 Keluarkan HANYA satu blok JSON valid seperti contoh.
 Jangan tambahkan teks, komentar, atau penjelasan di luar JSON.
@@ -36,9 +80,28 @@ Tugas Anda adalah menilai jawaban mahasiswa berdasarkan kunci jawaban dan rubrik
 
 Rubrik Penilaian:
 1. Pemahaman Konsep (0–100): Seberapa benar ide utama disampaikan.
+   - 90–100: Sangat benar, mencakup semua ide utama
+   - 70–89: Sebagian benar, ide utama sebagian tertangkap
+   - 50–69: Ada kesalahan konsep, sebagian ide penting hilang
+   - <50: Salah atau keliru secara konsep
+
 2. Kelengkapan Jawaban (0–100): Apakah semua poin penting disebutkan.
-3. Kejelasan Bahasa (0–100): Struktur kalimat dan tata bahasa.
-4. Analisis/Argumen (0–100): Logika dan kedalaman penjelasan.
+   - 90–100: Semua poin penting disebutkan
+   - 70–89: Ada beberapa poin hilang
+   - 50–69: Banyak poin hilang
+   - <50: Hampir tidak ada poin penting
+
+3. Kejelasan Bahasa (0–100): Struktur kalimat dan tata bahasa
+   - 90–100: Sangat jelas, kalimat baik dan mudah dipahami
+   - 70–89: Cukup jelas, ada beberapa kesalahan kecil
+   - 50–69: Sulit dipahami, banyak kesalahan
+   - <50: Tidak jelas, kalimat kacau
+
+4. Analisis/Argumen (0–100): Logika dan kedalaman penjelasan
+   - 90–100: Analisis sangat baik, argumen logis dan kuat
+   - 70–89: Analisis cukup, beberapa argumen kurang kuat
+   - 50–69: Analisis dangkal, argumen lemah
+   - <50: Analisis salah atau tidak ada
 
 Kunci Jawaban:
 {answer_key}
@@ -46,17 +109,26 @@ Kunci Jawaban:
 Jawaban Mahasiswa:
 {student_answer}
 
-Format output:
-{{
-  "pemahaman": <float>,
-  "kelengkapan": <float>,
-  "kejelasan": <float>,
-  "analisis": <float>,
-  "rata_rata": <float>,
-  "feedback": "<ringkasan singkat kelebihan dan kekurangan>"
-}}
+### PETUNJUK OUTPUT (WAJIB DIIKUTI)
+- Keluarkan **hanya satu blok JSON valid**, tanpa teks tambahan di luar JSON.
+- JSON harus **dimulai dengan '{{' dan diakhiri dengan '}}'**.
+- Semua nilai numerik harus **format desimal** (contoh: 87.5).
+- Wajib menyertakan **semua kunci berikut**:
+  - "pemahaman"
+  - "kelengkapan"
+  - "kejelasan"
+  - "analisis"
+  - "rata_rata"
+  - "feedback"
+- Nilai **"rata_rata"** adalah rata-rata sederhana dari keempat skor di atas.
+- Nilai **"feedback"** berupa ringkasan 1–2 kalimat yang menjelaskan
+  kelebihan dan kekurangan jawaban mahasiswa.
+- Feedback harus menyoroti aspek spesifik yang hilang, kurang lengkap, atau kurang jelas
+  dibandingkan dengan kunci jawaban, tanpa menyalin jawaban mahasiswa secara langsung.
+- Fokus feedback pada kualitas jawaban, misalnya pemahaman konsep, kelengkapan informasi,
+  kejelasan bahasa, dan logika/analisis.
 
-Contoh output:
+### CONTOH OUTPUT YANG BENAR:
 {{
   "pemahaman": 92.5,
   "kelengkapan": 90.0,
@@ -65,8 +137,13 @@ Contoh output:
   "rata_rata": 91.5,
   "feedback": "Jawaban mahasiswa sangat jelas dan lengkap, namun bisa menambahkan sedikit detail pada analisis mekanisme."
 }}
-"""
 
+Sekarang berikan **hanya JSON seperti di atas**, tanpa teks lain.
+"""
+    if USE_LONG_PROMPT:
+        prompt = long_prompt
+    else:
+        prompt = short_prompt
     return prompt
 
 
@@ -96,143 +173,104 @@ def call_ollama(prompt: str, model: str = DEFAULT_MODEL, timeout: int = 90) -> d
         return {"raw": resp.text}, llm_inference_time
 
 
-# === 3️⃣ Ekstraksi JSON dari Respons Model ===
-def extract_json_from_text(text: str) -> Optional[dict]:
-    json_pattern = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
-    m = json_pattern.search(text)
-    if m:
-        try:
-            return json.loads(m.group(0))
-        except Exception:
-            return None
-    return None
-
-
-# === 4️⃣ Hitung BERTScore ===
-def compute_bertscore(student_answer: str, answer_key: str) -> float:
-    try:
-        start_time = time.time()
-        P, R, F1 = score([student_answer], [answer_key], lang="id", device='cpu', verbose=False)
-        end_time = time.time()
-        similarity_time = round(end_time - start_time, 3)
-        return round(float(F1[0]) * 100, 2), similarity_time
-    except Exception as e:
-        print("Gagal menghitung BERTScore:", e)
-        return 0.0
-
-
-# === 5️⃣ Gabungkan Skor (Fusion) ===
-def fuse_scores(llm_scores: dict, bert_score: float, weight_llm: float = 0.6, weights: dict = None ) -> float:
-    # Bobot default kalau tidak diberikan
-    if weights is None:
-        weights = {
-            "pemahaman": 0.3,
-            "kelengkapan": 0.3,
-            "kejelasan": 0.2,
-            "analisis": 0.2
-        }
-
-    # Hitung rata-rata berbobot dari skor LLM
-    llm_avg = 0.0
-    total_weight = 0.0
-    for key, w in weights.items():
-        if key in llm_scores:
-            llm_avg += float(llm_scores[key]) * w
-            total_weight += w
-
-    if total_weight > 0:
-        llm_avg /= total_weight
-    else:
-        llm_avg = float(llm_scores.get("rata_rata", 0.0))
-
-    # Gabungkan dengan BERTScore
-    final_score = round(weight_llm * llm_avg + (1 - weight_llm) * bert_score, 2)
-    return max(0, min(100, final_score))
-
-
-# === Fungsi Utilitas: Parsing JSON dengan Aman ===
+# === 🔹 Parsing JSON Aman ===
 def safe_json_parse(text: str):
-    # Hapus pembungkus markdown
     text = re.sub(r'```(?:json)?', '', text, flags=re.IGNORECASE)
-
-    # Ambil blok JSON pertama (non-greedy)
     match = re.search(r'\{.*?\}', text, re.DOTALL)
     if not match:
         raise ValueError("Tidak ditemukan blok JSON dalam respons.")
-
     json_text = match.group(0).strip()
-
-    # Bersihkan trailing koma, kutip miring, dan karakter aneh
     json_text = re.sub(r',\s*}', '}', json_text)
     json_text = re.sub(r'“|”', '"', json_text)
-    json_text = json_text.replace('\n', ' ').replace('\r', '')
-
     try:
         return json.loads(json_text)
     except json.JSONDecodeError as e:
         raise ValueError(f"Gagal parsing JSON: {e}\nRaw JSON: {json_text[:500]}")
 
 
+# === 🔹 Load Model Embedding Sekali Saja ===
+print(f"\n🧠 Memuat model embedding MiniLM di {DEVICE_MODE}...")
+try:
+    start_load = time.time()
+    EMBEDDING_MODEL = SentenceTransformer(EMBEDDING_MODEL_PATH, device=DEVICE_MODE)
+    EMBEDDING_MODEL.encode("warmup", convert_to_tensor=True)
+    load_time = round((time.time() - start_load), 2)
+    print(f"✅ Model MiniLM siap digunakan (load time {load_time} detik)\n")
+except Exception as e:
+    print(f"❌ Gagal memuat model MiniLM: {e}")
+    EMBEDDING_MODEL = None
 
-# === 6️⃣ Endpoint /grade ===
+
+# === 🔹 Hitung Similarity dengan MiniLM ===
+def compute_embedding_similarity(student_answer: str, answer_key: str):
+    if EMBEDDING_MODEL is None:
+        raise RuntimeError("Model embedding belum siap.")
+    start_time = time.time()
+    emb_key = EMBEDDING_MODEL.encode(answer_key, convert_to_tensor=True, normalize_embeddings=True)
+    emb_ans = EMBEDDING_MODEL.encode(student_answer, convert_to_tensor=True, normalize_embeddings=True)
+    similarity = util.cos_sim(emb_key, emb_ans).item()
+    duration = round((time.time() - start_time), 3)
+    return round(similarity * 100, 2), duration
+
+
+# === 🔹 Gabungkan Skor ===
+def fuse_scores(llm_scores: dict, sim_score: float, weight_llm: float = 0.75):
+    weights = {"pemahaman": 0.3, "kelengkapan": 0.3, "kejelasan": 0.2, "analisis": 0.2}
+    llm_avg = sum(float(llm_scores.get(k, 0)) * w for k, w in weights.items())
+    final = round(weight_llm * llm_avg + (1 - weight_llm) * sim_score, 2)
+    return max(0, min(100, final))
+
+
+# === 🔹 Endpoint /grade ===
 @app.post("/grade")
 def grade(req: GradeRequest):
-    # 1️⃣ Buat prompt & panggil model Ollama
     prompt = build_prompt(req.answer_key, req.student_answer)
+
+    # 🔸 1. Panggil Ollama
     try:
         model_resp, llm_time = call_ollama(prompt, model=req.model)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    # 2️⃣ Ambil teks output dari Ollama
-    if isinstance(model_resp, dict):
-        model_text = (
-            model_resp.get("response")
-            or model_resp.get("output")
-            or model_resp.get("raw")
-            or json.dumps(model_resp)
-        )
-    else:
-        model_text = str(model_resp)
+    model_text = (
+        model_resp.get("response")
+        or model_resp.get("output")
+        or model_resp.get("raw")
+        or json.dumps(model_resp)
+    )
 
-    # 3️⃣ Parse JSON hasil LLM dengan aman
+    # 🔸 2. Parse JSON
     try:
         parsed = safe_json_parse(model_text)
     except Exception as e:
-        raise HTTPException(status_code=502, detail={
-            "message": "Model tidak mengembalikan JSON valid.",
-            "raw": model_text
-        })
+        raise HTTPException(status_code=502, detail={"message": "Model tidak mengembalikan JSON valid.", "raw": model_text})
 
-    # 4️⃣ Hitung BERTScore
+    # 🔸 3. Hitung Similarity
     try:
-        bert_score_value, similarity_time = compute_bertscore(req.student_answer, req.answer_key)
+        sim_value, sim_time = compute_embedding_similarity(req.student_answer, req.answer_key)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal menghitung BERTScore: {e}")
+        raise HTTPException(status_code=500, detail=f"Gagal menghitung similarity embedding: {e}")
 
-    # 5️⃣ Gabungkan skor Rubrik + BERTScore
+    # 🔸 4. Hitung Skor Gabungan
     try:
-        final_score = fuse_scores(parsed, bert_score_value)
+        final_score = fuse_scores(parsed, sim_value)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal menghitung skor akhir: {e}")
 
-    # 6️⃣ Ambil feedback dan nilai rubrik
     feedback = parsed.get("feedback", "").strip()
 
-    # === Cetak Benchmark ke Console ===
+    # === 🔸 Logging Console ===
     print("\n" + "="*60)
     print("🧠 BENCHMARK INFERENCE RESULT")
     print("="*60)
-    print(f"📊 Rata-rata Skor LLM     : {parsed.get('rata_rata', 'N/A')}")
-    print(f"📊 Skor Similarity (BERT) : {bert_score_value}")
-    print(f"⏱️  Waktu LLM Inference     : {llm_time} detik")
-    print(f"⏱️  Waktu Similarity Calc   : {similarity_time} detik")
-    print("-"*60)
-    print(f"🏁 Skor Gabungan (Final)   : {final_score}")
-    print(f"Total Waktu Proses       : {llm_time + similarity_time} detik")
+    print(f"📊 Rata-rata Skor LLM       : {parsed.get('rata_rata', 'N/A')}")
+    print(f"📊 Similarity (MiniLM)      : {sim_value}")
+    print(f"⏱️  LLM Inference Time       : {llm_time} detik")
+    print(f"⏱️  Embedding Similarity Time: {sim_time} detik")
+    print(f"🏁 Skor Gabungan (Final)    : {final_score}")
     print("="*60 + "\n")
 
-    result = {
+    return {
         "rubric_scores": {
             "pemahaman": parsed.get("pemahaman"),
             "kelengkapan": parsed.get("kelengkapan"),
@@ -240,30 +278,42 @@ def grade(req: GradeRequest):
             "analisis": parsed.get("analisis"),
             "rata_rata": parsed.get("rata_rata"),
         },
-        "bert_score": bert_score_value,
+        "embedding_similarity": sim_value,
         "final_score": final_score,
         "feedback": feedback,
-        # "raw": model_text
+        "llm_time": llm_time,
+        "similarity_time": sim_time
     }
 
-    return result
 
-
-# === Warm-up Model di Startup ===
+# === 🔹 Warmup Model Ollama ===
 @app.on_event("startup")
-def warmup_ollama():
-    print("\n🚀 Melakukan warm-up model Ollama...")
-    prompt = "Warm-up test: Jelaskan singkat apa itu sistem operasi dalam satu kalimat."
+def warmup_models():
+    print("\n🚀 Melakukan warm-up sistem Auto-Grader...")
+
+    # 🔸 Warm-up Ollama
     try:
+        print("🔹 Warm-up Ollama...")
+        prompt = "Warm-up test: Jelaskan singkat apa itu sistem operasi dalam satu kalimat."
         start = time.time()
-        resp, _ = call_ollama(prompt, model=DEFAULT_MODEL, timeout=120)
-        duration = round(time.time() - start, 2)
-        print(f"✅ Warm-up selesai dalam {duration} detik — model siap dipakai.\n")
+        call_ollama(prompt, model=DEFAULT_MODEL, timeout=120)
+        print(f"✅ Ollama siap (waktu: {round(time.time() - start, 2)} detik)")
     except Exception as e:
-        print(f"⚠️ Gagal warm-up model Ollama: {e}\n")
+        print(f"⚠️ Gagal warm-up Ollama: {e}")
+
+    # 🔸 Warm-up Embedding Model
+    try:
+        print("🔹 Warm-up MiniLM embedding...")
+        start = time.time()
+        _ = EMBEDDING_MODEL.encode("warm-up MiniLM", convert_to_tensor=True, normalize_embeddings=True)
+        print(f"✅ Embedding siap (waktu: {round(time.time() - start, 2)} detik)")
+    except Exception as e:
+        print(f"⚠️ Gagal warm-up embedding: {e}")
+
+    print("🔥 Semua komponen siap digunakan!\n")
 
 
-# === Entry point ===
+# === 🔹 Entry Point ===
 if __name__ == "__main__":
     import uvicorn
     print("Starting Ollama Hybrid Auto-Grader on http://127.0.0.1:8000")

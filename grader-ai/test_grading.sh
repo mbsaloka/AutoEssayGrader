@@ -5,9 +5,13 @@
 
 URL="http://127.0.0.1:8000/grade"
 # MODEL="llama3:8b"
-MODEL="phi3:mini"
+# MODEL="phi3:mini"
 # MODEL="llama3.2:1b"
+# MODEL="llama3.2:3b"
 # MODEL="mistral:7b-instruct"
+# MODEL="qwen2.5:7b-instruct"
+MODEL="qwen2.5:3b-instruct"
+# MODEL="gemma:7b"
 
 ANSWER_KEY="Sistem operasi memiliki peran penting dalam mengatur memori komputer agar setiap proses dapat berjalan dengan efisien. Manajemen memori mencakup alokasi, dealokasi, dan proteksi terhadap ruang memori. Salah satu teknik dasar adalah partitioning, di mana memori dibagi menjadi beberapa bagian. Selain itu, ada paging yang membagi memori menjadi blok tetap bernama frame, serta segmentation yang membagi berdasarkan unit logis seperti fungsi atau modul. Teknik lain yang populer adalah virtual memory, yang memungkinkan sistem menjalankan program lebih besar dari kapasitas fisik dengan menggunakan disk sebagai perluasan memori. Virtual memory biasanya diimplementasikan dengan demand paging. Sistem operasi juga harus menangani fragmentasi, baik internal maupun eksternal, serta menyediakan mekanisme swapping untuk memindahkan proses antara memori utama dan disk. Proteksi memori juga penting agar proses tidak saling mengganggu. Semua mekanisme ini bekerja bersama untuk memastikan penggunaan memori efisien, mencegah crash, dan memberikan ilusi bahwa setiap proses memiliki ruang memori sendiri. Manajemen memori yang baik sangat berpengaruh pada performa keseluruhan sistem."
 
