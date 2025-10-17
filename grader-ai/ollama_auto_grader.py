@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer, util
 
 # === Konfigurasi ===
 OLLAMA_URL = "http://localhost:11434/api/generate"
-USE_LONG_PROMPT = True
+USE_LONG_PROMPT = False
 # DEFAULT_MODEL = "mistral:7b-instruct"
 # DEFAULT_MODEL = "llama3.2:3b"
 # DEFAULT_MODEL = "llama3.2:1b"
@@ -29,21 +29,128 @@ app = FastAPI(title="Ollama Hybrid Auto-Grader", version="0.3")
 
 # === Schema Request ===
 class GradeRequest(BaseModel):
+    question: str
     answer_key: str
     student_answer: str
     model: Optional[str] = DEFAULT_MODEL
 
 
 # === 1️⃣ Prompt Rubric-based ===
-def build_prompt(answer_key: str, student_answer: str) -> str:
-    short_prompt = f"""
-Anda adalah sistem penilai jawaban esai berdasarkan rubrik berikut.
+def build_prompt(question: str, answer_key: str, student_answer: str) -> str:
+    # handle blank answer
+    if not student_answer or not student_answer.strip():
+        student_answer = "(jawaban kosong)"
 
-Rubrik:
-1. Pemahaman Konsep (0–100)
-2. Kelengkapan Jawaban (0–100)
-3. Kejelasan Bahasa (0–100)
-4. Analisis/Argumen (0–100)
+    short_prompt = f"""
+Anda adalah sistem penilai jawaban esai otomatis.
+Tugas Anda adalah menilai jawaban mahasiswa berdasarkan rubrik berikut secara objektif dan konsisten.
+
+=== RUBRIK PENILAIAN (0–100) ===
+1. Pemahaman Konsep — ketepatan dalam menangkap ide utama dari kunci jawaban.
+2. Kelengkapan Jawaban — sejauh mana poin penting dari kunci jawaban disebutkan.
+3. Kejelasan Bahasa — kejelasan struktur kalimat dan keterbacaan.
+4. Analisis / Argumen — logika dan kedalaman penjelasan dalam mendukung jawaban.
+
+=== DATA ===
+Pertanyaan:
+{question}
+
+Kunci Jawaban Ideal:
+{answer_key}
+
+Jawaban Mahasiswa:
+{student_answer}
+
+=== PETUNJUK PENILAIAN RUBRIC ===
+- Jangan ragu memberi nilai tinggi jika jawaban sesuai dengan kunci jawaban.
+- Jangan ragu memberi nilai rendah jika jawaban tidak sesuai, salah konsep, atau tidak jelas.
+- Gunakan kunci jawaban sebagai tolok ukur utama, bukan opini Anda sendiri.
+- Pahami konteks dan poin penting dari kunci jawaban sebelum menilai.
+- Berikan nilai rubrik berupa desimal dengan dua angka di belakang koma, misal 81.25.
+
+=== PETUNJUK FEEDBACK ===
+- Feedback ringkas 1-2 kalimat.
+- Hindari kalimat generik seperti “jawaban sudah cukup baik” atau "jawaban kurang tepat" tanpa penjelasan.
+- Berikan feedback yang spesifik dengan menyebutkan bagian jawaban mahasiswa yang kurang atau berbeda dari kunci jawaban.
+- Jika jawaban sudah sangat baik, sebutkan bagian mana yang sudah tepat.
+- Sertakan alasan singkat mengapa skor diberikan.
+- Jelaskan apa yang salah dari jawaban mahasiswa dan poin apa yang benar.
+
+=== FORMAT OUTPUT ===
+Keluarkan hasil dalam format JSON berikut:
+{{
+  "pemahaman": float,
+  "kelengkapan": float,
+  "kejelasan": float,
+  "analisis": float,
+  "feedback": string
+}}
+"""
+#     short_prompt = f"""
+# Anda adalah sistem penilai jawaban esai berdasarkan rubrik berikut.
+
+# Rubrik Penilaian Sederhana (0-100)
+# 1. Pemahaman Konsep: Seberapa tepat mahasiswa memahami ide utama.
+# 2. Kelengkapan Jawaban: Seberapa banyak poin penting dari kunci jawaban tercakup.
+# 3. Kejelasan Bahasa: Seberapa mudah jawaban dibaca dan dipahami.
+# 4. Analisis / Argumen: Seberapa logis dan mendalam penjelasan.
+
+# Pertanyaan:
+# {question}
+
+# Kunci Jawaban:
+# {answer_key}
+
+# Jawaban Mahasiswa:
+# {student_answer}
+
+# ### PETUNJUK OUTPUT
+# - Semua nilai numerik berupa desimal dengan dua angka di belakang koma, misal 84.25.
+# - Jangan ragu memberi nilai rendah jika jawaban tidak sesuai kunci jawaban.
+# - Jangan ragu memberi nilai tinggi jika jawaban sesuai dengan kunci jawaban.
+# - Wajib menyertakan kunci: "pemahaman", "kelengkapan", "kejelasan", "analisis", "feedback".
+# - "feedback" = 1-2 kalimat, sebutkan kelebihan atau kekurangan spesifik dibanding kunci jawaban. Jangan menyalin jawaban mahasiswa.
+
+# Contoh output:
+# {{
+#    "pemahaman": float,
+#    "kelengkapan": float,
+#    "kejelasan": float,
+#    "analisis": float,
+#    "feedback": string
+# }}
+# """
+
+    long_prompt = f"""
+Anda adalah sistem penilai jawaban esai yang objektif dan konsisten, menilai berdasarkan rubrik yang ketat serta mencocokkan isi jawaban mahasiswa dengan kunci jawaban yang diberikan.
+
+Rubrik Penilaian Sederhana (0-100)
+1. Pemahaman Konsep: Seberapa tepat mahasiswa memahami ide utama.
+90-100: Tepat dan lengkap
+70-89: Cukup tepat, ada sedikit kesalahan
+20-69: Banyak kekeliruan konsep
+<20: Salah total
+
+2. Kelengkapan Jawaban: Seberapa banyak poin penting dari kunci jawaban tercakup.
+90-100: Semua poin penting ada
+70-89: Sebagian besar poin ada
+20-69: Banyak poin hilang
+<20: Hampir tidak ada poin penting
+
+3. Kejelasan Bahasa: Seberapa mudah jawaban dibaca dan dipahami.
+90-100: Jelas dan rapi
+70-89: Cukup jelas, ada kesalahan kecil
+20-69: Kurang jelas
+<20: Sulit dipahami
+
+4. Analisis / Argumen: Seberapa logis dan mendalam penjelasan.
+90-100: Logis dan mendalam
+70-89: Cukup logis, agak dangkal
+20-69: Lemah atau dangkal
+<20: Tidak ada analisis
+
+Pertanyaan:
+{question}
 
 Kunci Jawaban:
 {answer_key}
@@ -53,92 +160,20 @@ Jawaban Mahasiswa:
 
 ### PETUNJUK OUTPUT
 - Keluarkan **hanya satu blok JSON valid**, mulai dengan `{{` dan diakhiri dengan `}}`.
-- Semua nilai numerik berupa desimal dengan satu angka di belakang koma, misal 87.5.
-- Wajib menyertakan kunci: "pemahaman", "kelengkapan", "kejelasan", "analisis", "rata_rata", "feedback".
-- "rata_rata" = (pemahaman + kelengkapan + kejelasan + analisis)/4
-- "feedback" = 1–2 kalimat, sebutkan **1 kekuatan dan 1 kelemahan spesifik** dibanding kunci jawaban. Jangan menyalin jawaban mahasiswa.
+- Jangan ragu memberi nilai rendah jika memang jawaban tidak sesuai kunci jawaban.
+- Jangan ragu memberi nilai tinggi jika memang jawaban mendekati kunci jawaban.
+- Semua nilai numerik berupa desimal dengan dua angka di belakang koma, misal 84.25.
+- Wajib menyertakan kunci: "pemahaman", "kelengkapan", "kejelasan", "analisis", "feedback".
+- "feedback" = 1–2 kalimat, sebutkan kelebihan atau kekurangan spesifik dibanding kunci jawaban. Jangan menyalin jawaban mahasiswa.
 
 Contoh output:
 {{
-  "pemahaman": 92.5,
-  "kelengkapan": 90.0,
-  "kejelasan": 95.0,
-  "analisis": 88.5,
-  "rata_rata": 91.5,
-  "feedback": "Jawaban sangat jelas dan lengkap, namun analisis mekanisme masih kurang mendetail."
+   "pemahaman": float,
+   "kelengkapan": float,
+   "kejelasan": float,
+   "analisis": float,
+   "feedback": string
 }}
-"""
-
-    long_prompt = f"""
-PENTING:
-Keluarkan HANYA satu blok JSON valid seperti contoh.
-Jangan tambahkan teks, komentar, atau penjelasan di luar JSON.
-Output harus dimulai dengan '{{' dan diakhiri dengan '}}'.
-
-Anda adalah sistem penilai jawaban esai berdasarkan rubrik yang ketat dan konsisten.
-Tugas Anda adalah menilai jawaban mahasiswa berdasarkan kunci jawaban dan rubrik berikut.
-
-Rubrik Penilaian:
-1. Pemahaman Konsep (0–100): Seberapa benar ide utama disampaikan.
-   - 90–100: Sangat benar, mencakup semua ide utama
-   - 70–89: Sebagian benar, ide utama sebagian tertangkap
-   - 50–69: Ada kesalahan konsep, sebagian ide penting hilang
-   - <50: Salah atau keliru secara konsep
-
-2. Kelengkapan Jawaban (0–100): Apakah semua poin penting disebutkan.
-   - 90–100: Semua poin penting disebutkan
-   - 70–89: Ada beberapa poin hilang
-   - 50–69: Banyak poin hilang
-   - <50: Hampir tidak ada poin penting
-
-3. Kejelasan Bahasa (0–100): Struktur kalimat dan tata bahasa
-   - 90–100: Sangat jelas, kalimat baik dan mudah dipahami
-   - 70–89: Cukup jelas, ada beberapa kesalahan kecil
-   - 50–69: Sulit dipahami, banyak kesalahan
-   - <50: Tidak jelas, kalimat kacau
-
-4. Analisis/Argumen (0–100): Logika dan kedalaman penjelasan
-   - 90–100: Analisis sangat baik, argumen logis dan kuat
-   - 70–89: Analisis cukup, beberapa argumen kurang kuat
-   - 50–69: Analisis dangkal, argumen lemah
-   - <50: Analisis salah atau tidak ada
-
-Kunci Jawaban:
-{answer_key}
-
-Jawaban Mahasiswa:
-{student_answer}
-
-### PETUNJUK OUTPUT (WAJIB DIIKUTI)
-- Keluarkan **hanya satu blok JSON valid**, tanpa teks tambahan di luar JSON.
-- JSON harus **dimulai dengan '{{' dan diakhiri dengan '}}'**.
-- Semua nilai numerik harus **format desimal** (contoh: 87.5).
-- Wajib menyertakan **semua kunci berikut**:
-  - "pemahaman"
-  - "kelengkapan"
-  - "kejelasan"
-  - "analisis"
-  - "rata_rata"
-  - "feedback"
-- Nilai **"rata_rata"** adalah rata-rata sederhana dari keempat skor di atas.
-- Nilai **"feedback"** berupa ringkasan 1–2 kalimat yang menjelaskan
-  kelebihan dan kekurangan jawaban mahasiswa.
-- Feedback harus menyoroti aspek spesifik yang hilang, kurang lengkap, atau kurang jelas
-  dibandingkan dengan kunci jawaban, tanpa menyalin jawaban mahasiswa secara langsung.
-- Fokus feedback pada kualitas jawaban, misalnya pemahaman konsep, kelengkapan informasi,
-  kejelasan bahasa, dan logika/analisis.
-
-### CONTOH OUTPUT YANG BENAR:
-{{
-  "pemahaman": 92.5,
-  "kelengkapan": 90.0,
-  "kejelasan": 95.0,
-  "analisis": 88.5,
-  "rata_rata": 91.5,
-  "feedback": "Jawaban mahasiswa sangat jelas dan lengkap, namun bisa menambahkan sedikit detail pada analisis mekanisme."
-}}
-
-Sekarang berikan **hanya JSON seperti di atas**, tanpa teks lain.
 """
     if USE_LONG_PROMPT:
         prompt = long_prompt
@@ -153,7 +188,7 @@ def call_ollama(prompt: str, model: str = DEFAULT_MODEL, timeout: int = 90) -> d
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"max_tokens": 800, "temperature": 0.0}
+        "options": {"num_predict": 800, "temperature": 0.0}
     }
 
     try:
@@ -214,17 +249,17 @@ def compute_embedding_similarity(student_answer: str, answer_key: str):
 
 
 # === 🔹 Gabungkan Skor ===
-def fuse_scores(llm_scores: dict, sim_score: float, weight_llm: float = 0.75):
-    weights = {"pemahaman": 0.3, "kelengkapan": 0.3, "kejelasan": 0.2, "analisis": 0.2}
+def fuse_scores(llm_scores: dict, sim_score: float, weight_llm: float = 0.85):
+    weights = {"pemahaman": 0.35, "kelengkapan": 0.35, "kejelasan": 0.1, "analisis": 0.2}
     llm_avg = sum(float(llm_scores.get(k, 0)) * w for k, w in weights.items())
     final = round(weight_llm * llm_avg + (1 - weight_llm) * sim_score, 2)
-    return max(0, min(100, final))
+    return max(0, min(100, final)), llm_avg
 
 
 # === 🔹 Endpoint /grade ===
 @app.post("/grade")
 def grade(req: GradeRequest):
-    prompt = build_prompt(req.answer_key, req.student_answer)
+    prompt = build_prompt(req.question, req.answer_key, req.student_answer)
 
     # 🔸 1. Panggil Ollama
     try:
@@ -253,7 +288,7 @@ def grade(req: GradeRequest):
 
     # 🔸 4. Hitung Skor Gabungan
     try:
-        final_score = fuse_scores(parsed, sim_value)
+        final_score, llm_score_avg = fuse_scores(parsed, sim_value)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal menghitung skor akhir: {e}")
 
@@ -263,7 +298,7 @@ def grade(req: GradeRequest):
     print("\n" + "="*60)
     print("🧠 BENCHMARK INFERENCE RESULT")
     print("="*60)
-    print(f"📊 Rata-rata Skor LLM       : {parsed.get('rata_rata', 'N/A')}")
+    print(f"📊 Rata-rata Skor LLM       : {llm_score_avg}")
     print(f"📊 Similarity (MiniLM)      : {sim_value}")
     print(f"⏱️  LLM Inference Time       : {llm_time} detik")
     print(f"⏱️  Embedding Similarity Time: {sim_time} detik")
@@ -276,7 +311,7 @@ def grade(req: GradeRequest):
             "kelengkapan": parsed.get("kelengkapan"),
             "kejelasan": parsed.get("kejelasan"),
             "analisis": parsed.get("analisis"),
-            "rata_rata": parsed.get("rata_rata"),
+            "rata_rata": llm_score_avg,
         },
         "embedding_similarity": sim_value,
         "final_score": final_score,
@@ -294,7 +329,7 @@ def warmup_models():
     # 🔸 Warm-up Ollama
     try:
         print("🔹 Warm-up Ollama...")
-        prompt = "Warm-up test: Jelaskan singkat apa itu sistem operasi dalam satu kalimat."
+        prompt = "Warm-up test: Halo, anda akan menjadi asisten penilai jawaban esai yang objektif, konsisten, dan kritis. Konfirmasikan jika anda siap."
         start = time.time()
         call_ollama(prompt, model=DEFAULT_MODEL, timeout=120)
         print(f"✅ Ollama siap (waktu: {round(time.time() - start, 2)} detik)")

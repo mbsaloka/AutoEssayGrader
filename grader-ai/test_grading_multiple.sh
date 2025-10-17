@@ -95,27 +95,27 @@ for qid in {1..5}; do
   for sid in {1..5}; do
     echo "💬 Jawaban Mahasiswa $sid:"
     echo "${STUDENT_ANSWERS[$qid,$sid]}"
-    echo "⏳ Mengirim ke API..."
-
-    start_time=$(date +%s%3N)
 
     response=$(curl -s -X POST $URL \
       -H "Content-Type: application/json" \
       -d "{
+        \"question\": \"${QUESTIONS[$qid]}\",
         \"answer_key\": \"${ANSWER_KEYS[$qid]}\",
         \"student_answer\": \"${STUDENT_ANSWERS[$qid,$sid]}\",
         \"model\": \"$MODEL\"
       }")
 
-    end_time=$(date +%s%3N)
-    infer_time=$((end_time - start_time))
+    infer_time=$(echo "$(echo "$response" | jq -r '.llm_time') + $(echo "$response" | jq -r '.similarity_time')" | bc)
     INFER_TIMES[$qid,$sid]=$infer_time
 
     score=$(echo "$response" | jq -r '.final_score // .score // empty')
     AI_SCORES[$qid,$sid]=$score
 
+    feedback=$(echo "$response" | jq -r '.feedback // empty')
+
     echo "Hasil Skor: $score (Waktu: ${infer_time} ms)"
-    echo ""
+    echo "Feedback: $feedback"
+    echo "====="
   done
 done
 
