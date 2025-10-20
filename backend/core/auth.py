@@ -18,6 +18,7 @@ if SECRET is None:
 
 
 def get_jwt_strategy() -> JWTStrategy:
+    # 1 hour = 60 * 60 = 3600 seconds
     return JWTStrategy(secret=SECRET, lifetime_seconds=3600)
 
 

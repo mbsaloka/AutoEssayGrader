@@ -1,0 +1,250 @@
+﻿@import "tailwindcss";
+
+/* ========================================
+   THEME COLORS - CSS Variables Approach
+   ======================================== */
+
+:root {
+  --background: #2b2d31;
+  --foreground: #ffffff;
+  --yellow: #fbbf24;
+  --gold: #eab308;
+  --navy: #1e3a5f;
+}
+
+:root:not(.dark) {
+  --background: #ffffff;
+  --foreground: #1a1a1a;
+  --yellow: #fbbf24;
+  --gold: #eab308;
+  --navy: #1e3a5f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark body {
+  background: #2b2d31;
+  color: #ffffff;
+}
+
+:root:not(.dark) body {
+  background: #f9fafb;
+  color: #1a1a1a;
+}
+
+.dark nav {
+  background: #2b2d31 !important;
+  border-bottom-color: #4b5563 !important;
+}
+
+:root:not(.dark) nav {
+  background: #ffffff !important;
+  border-bottom-color: #e5e7eb !important;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+}
+
+.dark .bg-\[\#2b2d31\] {
+  background: #2b2d31 !important;
+}
+
+:root:not(.dark) .bg-\[\#2b2d31\] {
+  background: #ffffff !important;
+}
+
+.dark .text-gray-300 {
+  color: #d1d5db !important;
+}
+
+:root:not(.dark) .text-gray-300 {
+  color: #4b5563 !important;
+}
+
+.dark .text-gray-400 {
+  color: #9ca3af !important;
+}
+
+:root:not(.dark) .text-gray-400 {
+  color: #6b7280 !important;
+}
+
+.dark .text-white {
+  color: #ffffff !important;
+}
+
+:root:not(.dark) .text-white {
+  color: #1f2937 !important;
+}
+
+.dark .bg-gray-700 {
+  background: #374151 !important;
+}
+
+:root:not(.dark) .bg-gray-700 {
+  background: #f3f4f6 !important;
+}
+
+.dark .bg-gray-800 {
+  background: #1f2937 !important;
+}
+
+:root:not(.dark) .bg-gray-800 {
+  background: #e5e7eb !important;
+}
+
+.dark .bg-gray-900 {
+  background: #111827 !important;
+}
+
+:root:not(.dark) .bg-gray-900 {
+  background: #f9fafb !important;
+}
+
+.dark .border-gray-700 {
+  border-color: #374151 !important;
+}
+
+:root:not(.dark) .border-gray-700 {
+  border-color: #d1d5db !important;
+}
+
+.dark .border-gray-600 {
+  border-color: #4b5563 !important;
+}
+
+:root:not(.dark) .border-gray-600 {
+  border-color: #e5e7eb !important;
+}
+
+.dark .border-gray-800 {
+  border-color: #1f2937 !important;
+}
+
+:root:not(.dark) .border-gray-800 {
+  border-color: #e5e7eb !important;
+}
+
+.dark .hover\:bg-gray-600:hover {
+  background: #4b5563 !important;
+}
+
+:root:not(.dark) .hover\:bg-gray-600:hover {
+  background: #e5e7eb !important;
+}
+
+.dark .hover\:bg-gray-700:hover {
+  background: #374151 !important;
+}
+
+:root:not(.dark) .hover\:bg-gray-700:hover {
+  background: #f3f4f6 !important;
+}
+
+.dark footer {
+  background: #23252a !important;
+  border-top-color: #374151 !important;
+}
+
+:root:not(.dark) footer {
+  background: #f9fafb !important;
+  border-top-color: #e5e7eb !important;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+:root:not(.dark) ::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+:root:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+:root:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+*:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+.dark input,
+.dark textarea {
+  background: #374151 !important;
+  border-color: #4b5563 !important;
+  color: #ffffff !important;
+}
+
+:root:not(.dark) input,
+:root:not(.dark) textarea {
+  background: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #1f2937 !important;
+}
+
+.dark input:focus,
+.dark textarea:focus {
+  border-color: #fbbf24 !important;
+  ring-color: #fbbf24 !important;
+}
+
+:root:not(.dark) input:focus,
+:root:not(.dark) textarea:focus {
+  border-color: #fbbf24 !important;
+  ring-color: #fbbf24 !important;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideDown {
+  animation: slideDown 0.2s ease-out;
+}
+
+@supports (backdrop-filter: blur(10px)) {
+  .mobile-menu-backdrop {
+    backdrop-filter: blur(10px);
+  }
+}

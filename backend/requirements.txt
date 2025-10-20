@@ -6,3 +6,22 @@ fastapi-users-db-sqlalchemy==6.0.1
 pydantic
 python-multipart
 python-dotenv
+httpx
+passlib[bcrypt]
+
+# ocr
+opencv-python
+cvzone
+numpy
+Pillow
+matplotlib
+PyMuPDF
+transformers
+torch
+
+# graders ai
+fastapi
+uvicorn
+requests
+pydantic
+bert-score
