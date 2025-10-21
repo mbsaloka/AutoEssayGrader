@@ -14,7 +14,7 @@ export default function GuestRoute({
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push("/home");
+      router.push("/dashboard");
     }
   }, [isAuthenticated, isLoading, router]);
   if (isLoading) {

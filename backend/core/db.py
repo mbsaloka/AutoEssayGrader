@@ -2,7 +2,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi_users.db import SQLAlchemyUserDatabase
 from models.user_model import Base, User
-# DISABLED: class_model tables (classes, enrollments, assignments)
 # from models import class_model
 import os
 from dotenv import load_dotenv
@@ -34,7 +33,6 @@ async def create_tables():
 
 
 async def reset_tables():
-    # ==== Drop Semua Tabel Setiap restart Backend, yaitu drop isi data dari masing-masing tabel ====
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

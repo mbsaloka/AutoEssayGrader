@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.db import get_session
 from models.user_model import User, UserOAuth, UserSession
-from core.auth import get_jwt_strategy
+from core.auth import get_jwt_strategy, ACCESS_TOKEN_EXPIRE_MINUTES
 import httpx
 import os
 from dotenv import load_dotenv
@@ -33,7 +33,6 @@ GITHUB_USER_EMAIL_URL = "https://api.github.com/user/emails"
 
 @router.get("/oauth/google")
 async def oauth_google_login():
-    """Initiate OAuth flow with Google"""
     redirect_uri = f"{BACKEND_URL}/api/auth/oauth/google/callback"
     params = {
         "client_id": GOOGLE_CLIENT_ID,
@@ -52,7 +51,6 @@ async def oauth_google_login():
 
 @router.get("/oauth/google/callback")
 async def oauth_google_callback(code: str, request: Request):
-    """Callback endpoint for Google OAuth"""
     async for session in get_session():
         pass
     
@@ -117,7 +115,6 @@ async def oauth_google_callback(code: str, request: Request):
         if not user:
             username = email.split("@")[0] + "_" + oauth_id[:6]
             
-            # Import UserRole from models
             from models.user_model import UserRole
             
             user = User(
@@ -125,7 +122,7 @@ async def oauth_google_callback(code: str, request: Request):
                 fullname=name,
                 username=username,
                 profile_picture=picture,
-                user_role=UserRole.DOSEN,  # Default to MAHASISWA for OAuth users
+                user_role=UserRole.MAHASISWA,
                 hashed_password="",
                 is_active=True,
                 is_verified=True,
@@ -147,7 +144,7 @@ async def oauth_google_callback(code: str, request: Request):
     token = await jwt_strategy.write_token(user)
     
     login_timestamp = datetime.utcnow()
-    expires_at = login_timestamp + timedelta(hours=1)
+    expires_at = login_timestamp + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     client_host = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent", "")
     
@@ -184,7 +181,6 @@ async def oauth_github_login():
 
 @router.get("/oauth/github/callback")
 async def oauth_github_callback(code: str, request: Request):
-    """Callback endpoint for GitHub OAuth"""
     try:
         async for session in get_session():
             async with httpx.AsyncClient() as client:
@@ -264,7 +260,6 @@ async def oauth_github_callback(code: str, request: Request):
                 if not user:
                     username = user_info.get("login", "github_" + oauth_id[:6])
                     
-                    # Import UserRole from models
                     from models.user_model import UserRole
                     
                     user = User(
@@ -272,7 +267,7 @@ async def oauth_github_callback(code: str, request: Request):
                         fullname=name,
                         username=username,
                         profile_picture=avatar,
-                        user_role=UserRole.DOSEN, 
+                        user_role=UserRole.MAHASISWA, 
                         hashed_password="",
                         is_active=True,
                         is_verified=True,
@@ -294,7 +289,7 @@ async def oauth_github_callback(code: str, request: Request):
             token = await jwt_strategy.write_token(user)
             
             login_timestamp = datetime.utcnow()
-            expires_at = login_timestamp + timedelta(hours=1)
+            expires_at = login_timestamp + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             client_host = request.client.host if request.client else None
             user_agent = request.headers.get("user-agent", "")
             

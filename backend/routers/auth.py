@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.db import get_session
-from models.user_model import User, UserCreate, UserRead, UserSession
-from core.auth import get_jwt_strategy
+from models.user_model import User, UserCreate, UserRead, UserSession, UserRole
+from core.auth import get_jwt_strategy, ACCESS_TOKEN_EXPIRE_MINUTES
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from datetime import datetime, timedelta
@@ -39,24 +40,82 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
+@router.post("/token")
+async def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    request: Request = None,
+    session: AsyncSession = Depends(get_session)
+):
+    result = await session.execute(select(User).where(User.email == form_data.username))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    jwt_strategy = get_jwt_strategy()
+    access_token = await jwt_strategy.write_token(user)
+    
+    login_timestamp = datetime.utcnow()
+    expires_at = login_timestamp + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    client_host = request.client.host if request and request.client else None
+    user_agent = request.headers.get("user-agent", "") if request else ""
+    
+    new_session = UserSession(
+        user_id=user.id,
+        token=access_token,
+        login_timestamp=login_timestamp,
+        last_activity=login_timestamp,
+        ip_address=client_host,
+        user_agent=user_agent,
+        is_active=True,
+        expires_at=expires_at
+    )
+    
+    session.add(new_session)
+    await session.commit()
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+
+
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserCreate,
     session: AsyncSession = Depends(get_session)
 ):
-    """Register a new user with email and password"""
     result = await session.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            detail="Email sudah terdaftar"
         )
     
     result = await session.execute(select(User).where(User.username == user_data.username))
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
+            detail="Username sudah terpakai"
         )
     
     hashed_password = get_password_hash(user_data.password)
@@ -65,7 +124,7 @@ async def register_user(
         email=user_data.email,
         fullname=user_data.fullname,
         username=user_data.username,
-        user_role=user_data.user_role,  # Include user_role from registration
+        user_role=UserRole.MAHASISWA,
         notelp=user_data.notelp,
         institution=user_data.institution,
         biografi=user_data.biografi,
@@ -85,7 +144,7 @@ async def register_user(
         email=new_user.email,
         fullname=new_user.fullname,
         username=new_user.username,
-        user_role=new_user.user_role,  # Include user_role in response
+        user_role=new_user.user_role,
         notelp=new_user.notelp,
         institution=new_user.institution,
         biografi=new_user.biografi,
@@ -96,7 +155,7 @@ async def register_user(
     )
     
     return RegisterResponse(
-        message="User registered successfully",
+        message="User terdaftar berhasil",
         user=user_read
     )
 
@@ -107,7 +166,6 @@ async def login_user(
     request: Request,
     session: AsyncSession = Depends(get_session)
 ):
-    """Login with email and password"""
     result = await session.execute(select(User).where(User.email == login_data.email))
     user = result.scalar_one_or_none()
     
@@ -133,7 +191,7 @@ async def login_user(
     token = await jwt_strategy.write_token(user)
     
     login_timestamp = datetime.utcnow()
-    expires_at = login_timestamp + timedelta(hours=1)
+    expires_at = login_timestamp + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     client_host = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent", "")
@@ -159,7 +217,7 @@ async def login_user(
         email=user.email,
         fullname=user.fullname,
         username=user.username,
-        user_role=user.user_role,  # Include user_role in login response
+        user_role=user.user_role,
         notelp=user.notelp,
         institution=user.institution,
         biografi=user.biografi,
@@ -182,7 +240,6 @@ async def get_current_user(
     authorization: str = Header(None),
     session: AsyncSession = Depends(get_session)
 ):
-    """Get current user information from Authorization header"""
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -231,7 +288,7 @@ async def get_current_user(
             email=user.email,
             fullname=user.fullname,
             username=user.username,
-            user_role=user.user_role,  # Include user_role in /me response
+            user_role=user.user_role,
             notelp=user.notelp,
             institution=user.institution,
             biografi=user.biografi,
@@ -265,7 +322,6 @@ async def logout_user(
     token: str,
     session: AsyncSession = Depends(get_session)
 ):
-    """Logout user and invalidate session"""
     try:
         result = await session.execute(
             select(UserSession).where(
@@ -279,7 +335,7 @@ async def logout_user(
             user_session.is_active = False
             await session.commit()
         
-        return {"message": "Logout successful"}
+        return {"message": "Logout berhasil"}
     except Exception:
-        return {"message": "Logout successful"}
+        return {"message": "Logout berhasil"}
 

@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from core.db import get_session
-from core.auth import current_active_user
+from core.auth import get_current_user
 from models.user_model import User
 from pydantic import BaseModel
 
@@ -27,59 +27,42 @@ class OCRResultRead(BaseModel):
 @router.post("/upload", response_model=OCRResultRead)
 async def upload_and_process_pdf(
     file: UploadFile = File(...),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """
-    Upload PDF file untuk OCR processing.
-    - Hanya menerima file PDF
-    - Maksimal ukuran 50MB
-    - File akan disimpan di artifcial/files/ dengan format: 1-tanggaljam_namafileasli.pdf
-    - Memanggil main.py di folder artifcial untuk proses OCR
-    - Mengembalikan hasil OCR dari hasil_ocr.txt
-    """
     
-    # Validasi tipe file
     if not file.filename.endswith('.pdf'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PDF files are allowed"
+            detail="Hanya file PDF yang diizinkan"
         )
     
-    # Validasi ukuran file (50MB = 50 * 1024 * 1024 bytes)
-    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+    MAX_FILE_SIZE = 50 * 1024 * 1024
     
-    # Read file content untuk validasi ukuran
     file_content = await file.read()
     file_size = len(file_content)
     
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File size exceeds 50MB limit. Your file is {file_size / (1024*1024):.2f}MB"
+            detail=f"Ukuran file melebihi batas 50MB. File Anda adalah {file_size / (1024*1024):.2f}MB"
         )
     
-    # Reset file pointer ke awal
     await file.seek(0)
     
     try:
-        # Path ke folder artificial
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         artificial_dir = os.path.join(base_dir, "artifcial")
         files_dir = os.path.join(artificial_dir, "files")
         
-        # Pastikan folder files ada
         if not os.path.exists(files_dir):
             os.makedirs(files_dir)
         
-        # Generate nama file dengan format: 1-tanggaljam_namafileasli.pdf
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         original_filename = file.filename.replace(" ", "_")
         new_filename = f"1-{timestamp}_{original_filename}"
         file_path = os.path.join(files_dir, new_filename)
         
-        # Hapus file lama dengan nama yang sama (jika ada)
-        # Cari file yang memiliki nama asli yang sama
         for existing_file in os.listdir(files_dir):
             if existing_file.endswith(f"_{original_filename}"):
                 old_file_path = os.path.join(files_dir, existing_file)
@@ -89,36 +72,30 @@ async def upload_and_process_pdf(
                 except Exception as e:
                     print(f"[WARNING] Could not delete old file {existing_file}: {e}")
         
-        # Simpan file baru
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
         print(f"[INFO] File saved: {new_filename}")
         
-        # Jalankan main.py untuk proses OCR dengan argument PDF path
         main_py_path = os.path.join(artificial_dir, "main.py")
         
         print("[INFO] Running OCR process...")
         
-        # Path ke Python executable di virtual environment artificial
         venv_python = os.path.join(artificial_dir, ".venv", "Scripts", "python.exe")
         
-        # Jika venv tidak ada, gunakan python system
         if not os.path.exists(venv_python):
             venv_python = sys.executable
         
-        # Path PDF yang akan diproses (relative dari direktori artifcial)
         pdf_relative_path = f"files/{new_filename}"
         
         print(f"[INFO] Processing PDF: {pdf_relative_path}")
         
-        # Jalankan main.py dengan argument PDF path
         result = subprocess.run(
             [venv_python, main_py_path, pdf_relative_path],
             cwd=artificial_dir,
             capture_output=True,
             text=True,
-            timeout=300  # 5 menit timeout
+            timeout=300
         )
         
         if result.returncode != 0:
@@ -131,7 +108,6 @@ async def upload_and_process_pdf(
         print("[INFO] OCR process completed successfully")
         print(f"[OUTPUT] {result.stdout}")
         
-        # Baca hasil OCR dari hasil_ocr.txt
         hasil_ocr_path = os.path.join(artificial_dir, "hasil_ocr.txt")
         
         if not os.path.exists(hasil_ocr_path):
@@ -166,15 +142,10 @@ async def upload_and_process_pdf(
 
 @router.get("/result", response_model=OCRResultRead)
 async def get_latest_ocr_result(
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """
-    Get hasil OCR terbaru dari hasil_ocr.txt
-    """
-    
     try:
-        # Path ke folder artificial
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         artificial_dir = os.path.join(base_dir, "artifcial")
         hasil_ocr_path = os.path.join(artificial_dir, "hasil_ocr.txt")
@@ -185,11 +156,9 @@ async def get_latest_ocr_result(
                 detail="No OCR result found"
             )
         
-        # Baca hasil OCR
         with open(hasil_ocr_path, "r", encoding="utf-8") as f:
             ocr_result = f.read()
         
-        # Get file modification time
         mod_time = os.path.getmtime(hasil_ocr_path)
         processed_at = datetime.fromtimestamp(mod_time).isoformat()
         

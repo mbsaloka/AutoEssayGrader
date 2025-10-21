@@ -1,7 +1,3 @@
-
-
-> Note: frontend backend folder dipisah, kalau mau push usahakan buat branch dulu. thankyou
-
 # 📚 AutoEssayGrader
 
 Sistem otomatis untuk mengoreksi esai dari dokumen PDF yang di-scan menggunakan teknologi Computer Vision dan Natural Language Processing (NLP).

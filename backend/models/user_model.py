@@ -11,7 +11,6 @@ Base = declarative_base()
 
 
 class UserRole(enum.Enum):
-    """User role enum: dosen (teacher) or mahasiswa (student)"""
     DOSEN = "dosen"
     MAHASISWA = "mahasiswa"
 
@@ -27,15 +26,17 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     notelp = Column(String, nullable=True)
     institution = Column(String, nullable=True)
     biografi = Column(Text, nullable=True)
-    user_role = Column(SQLEnum(UserRole), default=UserRole.DOSEN, nullable=False)  # NEW: dosen or mahasiswa
+    user_role = Column(SQLEnum(UserRole), default=UserRole.MAHASISWA, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
-    # Relationship dengan OAuth
     oauth_accounts = relationship("UserOAuth", back_populates="user", cascade="all, delete-orphan")
+    created_classes = relationship("Kelas", back_populates="teacher", foreign_keys="[Kelas.teacher_id]")
+    class_participants = relationship("ClassParticipant", back_populates="user")
+    assignment_submissions = relationship("AssignmentSubmission", back_populates="student")
 
 
 class UserOAuth(Base):
@@ -43,13 +44,12 @@ class UserOAuth(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    oauth_provider = Column(String, nullable=False)  # 'google' atau 'github'
-    oauth_id = Column(String, nullable=False)  # ID dari provider
+    oauth_provider = Column(String, nullable=False)
+    oauth_id = Column(String, nullable=False)
     access_token = Column(Text, nullable=True)
     refresh_token = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
-    # Relationship dengan User
     user = relationship("User", back_populates="oauth_accounts")
 
 
@@ -58,7 +58,7 @@ class UserSession(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    token = Column(Text, nullable=False)  # JWT token
+    token = Column(Text, nullable=False)
     login_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_activity = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     ip_address = Column(String, nullable=True)
@@ -66,7 +66,6 @@ class UserSession(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     
-    # Relationship dengan User
     user = relationship("User")
 
 
@@ -75,7 +74,7 @@ class UserCreate(schemas.BaseUserCreate):
     username: str
     email: str
     password: str
-    user_role: UserRole = UserRole.DOSEN  # NEW: default to mahasiswa
+    user_role: UserRole = UserRole.MAHASISWA
     notelp: Optional[str] = None
     institution: Optional[str] = None
     biografi: Optional[str] = None
@@ -87,7 +86,7 @@ class UserRead(schemas.BaseUser[int]):
     fullname: str
     username: str
     email: str
-    user_role: UserRole  # NEW: include role in read response
+    user_role: UserRole
     notelp: Optional[str] = None
     institution: Optional[str] = None
     biografi: Optional[str] = None
@@ -95,14 +94,14 @@ class UserRead(schemas.BaseUser[int]):
     is_active: bool
     is_superuser: bool
     is_verified: bool
-    is_oauth_user: bool = False  # Flag untuk menandai OAuth user
+    is_oauth_user: bool = False
 
 
 class UserUpdate(schemas.BaseUserUpdate):
     fullname: Optional[str] = None
     username: Optional[str] = None
     email: Optional[str] = None
-    user_role: Optional[UserRole] = None  # NEW: allow updating role
+    user_role: Optional[UserRole] = None
     notelp: Optional[str] = None
     institution: Optional[str] = None
     biografi: Optional[str] = None

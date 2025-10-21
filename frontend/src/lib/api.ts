@@ -1,19 +1,11 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Legacy API functions - maintained for backward compatibility
+// New code should use services from @/services instead
 
-export interface User {
-  id: number;
-  email: string;
-  fullname: string;
-  username: string;
-  notelp?: string;
-  institution?: string;
-  biografi?: string;
-  profile_picture?: string;
-  is_active: boolean;
-  is_verified: boolean;
-  is_superuser: boolean;
-  is_oauth_user?: boolean;
-}
+import { authService, userService, profileService } from "@/services";
+import type { User, UserCreate, LoginRequest, LoginResponse, RegisterResponse, UserUpdate } from "@/types";
+
+// Re-export types for backward compatibility
+export type { User };
 
 export interface UpdateProfileData {
   fullname?: string;
@@ -47,152 +39,37 @@ export interface AuthResponse {
   user: User;
 }
 
-export interface RegisterResponse {
-  message: string;
-  user: User;
-}
+export { type RegisterResponse };
 
 export interface ApiError {
   detail: string;
 }
 
-const handleApiError = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  return 'An error occurred';
-};
-
+// Legacy wrapper functions using new services
 export const registerUser = async (data: RegisterData): Promise<RegisterResponse> => {
-  try {
-    const response = await fetch(`${API_URL}/api/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || 'Registration failed');
-    }
-
-    return await response.json();
-  } catch (error: unknown) {
-    throw new Error(handleApiError(error));
-  }
+  return authService.register(data as UserCreate);
 };
 
 export const loginUser = async (data: LoginData): Promise<AuthResponse> => {
-  try {
-    const response = await fetch(`${API_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || 'Login failed');
-    }
-
-    return await response.json();
-  } catch (error: unknown) {
-    throw new Error(handleApiError(error));
-  }
+  return authService.login(data as LoginRequest);
 };
 
 export const getCurrentUser = async (token: string): Promise<User> => {
-  try {
-    const response = await fetch(`${API_URL}/api/auth/me`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error('Failed to get user information: ' + errorText);
-    }
-
-    const userData = await response.json();
-    return userData;
-  } catch (error: unknown) {
-    throw new Error(handleApiError(error));
-  }
+  return authService.getCurrentUser();
 };
 
 export const getGoogleAuthUrl = async (): Promise<string> => {
-  try {
-    const response = await fetch(`${API_URL}/api/auth/oauth/google`, {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to get Google authorization URL');
-    }
-
-    const data = await response.json();
-    return data.authorization_url;
-  } catch (error: unknown) {
-    throw new Error(handleApiError(error));
-  }
+  const result = await authService.getGoogleAuthUrl();
+  return result.authorization_url;
 };
 
 export const getGithubAuthUrl = async (): Promise<string> => {
-  try {
-    const response = await fetch(`${API_URL}/api/auth/oauth/github`, {
-      method: 'GET',
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to get GitHub authorization URL');
-    }
-
-    const data = await response.json();
-    return data.authorization_url;
-  } catch (error: unknown) {
-    throw new Error(handleApiError(error));
-  }
+  const result = await authService.getGithubAuthUrl();
+  return result.authorization_url;
 };
 
 export const updateUserProfile = async (token: string, data: UpdateProfileData): Promise<User> => {
-  try {
-    const response = await fetch(`${API_URL}/api/users/me`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      try {
-        const errorJson = JSON.parse(errorText);
-        throw new Error(errorJson.detail || 'Failed to update profile');
-      } catch {
-        throw new Error(errorText || 'Failed to update profile');
-      }
-    }
-
-    const userData = await response.json();
-    return userData;
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error('Failed to update profile');
-  }
+  return userService.updateProfile(data as UserUpdate);
 };
 
 export const changePassword = async (
@@ -200,37 +77,10 @@ export const changePassword = async (
   currentPassword: string,
   newPassword: string
 ): Promise<{ message: string }> => {
-  try {
-    const response = await fetch(`${API_URL}/api/users/me/change-password`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        current_password: currentPassword,
-        new_password: newPassword,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      try {
-        const errorJson = JSON.parse(errorText);
-        throw new Error(errorJson.detail || 'Failed to change password');
-      } catch {
-        throw new Error(errorText || 'Failed to change password');
-      }
-    }
-
-    const result = await response.json();
-    return result;
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error('Failed to change password');
-  }
+  return profileService.changePassword({
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
 };
 
 const TOKEN_KEY = 'auth_token';
