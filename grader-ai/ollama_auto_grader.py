@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import requests
 import json
@@ -10,7 +12,6 @@ from sentence_transformers import SentenceTransformer, util
 
 # === Konfigurasi ===
 OLLAMA_URL = "http://localhost:11434/api/generate"
-USE_LONG_PROMPT = False
 # DEFAULT_MODEL = "mistral:7b-instruct"
 # DEFAULT_MODEL = "llama3.2:3b"
 # DEFAULT_MODEL = "llama3.2:1b"
@@ -18,6 +19,8 @@ USE_LONG_PROMPT = False
 # DEFAULT_MODEL = "llama3:8b"
 # DEFAULT_MODEL = "qwen2.5:7b-instruct"
 DEFAULT_MODEL = "qwen2.5:3b-instruct"
+# CODER_MODEL = "qwen2.5-coder:3b"
+# DEFAULT_MODEL = "deepseek-r1:1.5b"
 # DEFAULT_MODEL = "gemma:7b"
 
 # Path lokal model MiniLM
@@ -25,7 +28,7 @@ EMBEDDING_MODEL_PATH = "/home/mbsaloka/.cache/huggingface/hub/models--sentence-t
 DEVICE_MODE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # === Inisialisasi Aplikasi ===
-app = FastAPI(title="Ollama Hybrid Auto-Grader", version="0.3")
+app = FastAPI(title="Ollama Essay Auto Grader", version="0.3")
 
 # === Schema Request ===
 class GradeRequest(BaseModel):
@@ -41,7 +44,7 @@ def build_prompt(question: str, answer_key: str, student_answer: str) -> str:
     if not student_answer or not student_answer.strip():
         student_answer = "(jawaban kosong)"
 
-    short_prompt = f"""
+    default_prompt = f"""
 Anda adalah sistem penilai jawaban esai otomatis.
 Tugas Anda adalah menilai jawaban mahasiswa berdasarkan rubrik berikut secara objektif dan konsisten.
 
@@ -53,13 +56,13 @@ Tugas Anda adalah menilai jawaban mahasiswa berdasarkan rubrik berikut secara ob
 
 === DATA ===
 Pertanyaan:
-{question}
+"{question}"
 
 Kunci Jawaban Ideal:
-{answer_key}
+"{answer_key}"
 
 Jawaban Mahasiswa:
-{student_answer}
+"{student_answer}"
 
 === PETUNJUK PENILAIAN RUBRIC ===
 - Jangan ragu memberi nilai tinggi jika jawaban sesuai dengan kunci jawaban.
@@ -86,99 +89,66 @@ Keluarkan hasil dalam format JSON berikut:
   "feedback": string
 }}
 """
-#     short_prompt = f"""
-# Anda adalah sistem penilai jawaban esai berdasarkan rubrik berikut.
 
-# Rubrik Penilaian Sederhana (0-100)
-# 1. Pemahaman Konsep: Seberapa tepat mahasiswa memahami ide utama.
-# 2. Kelengkapan Jawaban: Seberapa banyak poin penting dari kunci jawaban tercakup.
-# 3. Kejelasan Bahasa: Seberapa mudah jawaban dibaca dan dipahami.
-# 4. Analisis / Argumen: Seberapa logis dan mendalam penjelasan.
+    coder_prompt = f"""
+Anda adalah sistem penilai jawaban esai pemrograman otomatis.
+Tugas Anda adalah menilai jawaban mahasiswa berdasarkan rubrik berikut secara objektif dan konsisten.
 
-# Pertanyaan:
-# {question}
+=== RUBRIK PENILAIAN (0–100) ===
+1. Pemahaman Konsep — sejauh mana mahasiswa memahami tujuan kode dan konsep logika yang diminta soal.
+2. Kelengkapan Jawaban — apakah seluruh bagian penting dari kunci jawaban telah diimplementasikan atau dijelaskan.
+3. Kejelasan Bahasa dan Kode — apakah penjelasan mudah dipahami dan kode ditulis dengan struktur yang benar serta rapi.
+4. Analisis / Argumen — sejauh mana mahasiswa menjelaskan alasan logika di balik kodenya, atau menunjukkan pemahaman terhadap kesalahan dan perbaikannya.
 
-# Kunci Jawaban:
-# {answer_key}
-
-# Jawaban Mahasiswa:
-# {student_answer}
-
-# ### PETUNJUK OUTPUT
-# - Semua nilai numerik berupa desimal dengan dua angka di belakang koma, misal 84.25.
-# - Jangan ragu memberi nilai rendah jika jawaban tidak sesuai kunci jawaban.
-# - Jangan ragu memberi nilai tinggi jika jawaban sesuai dengan kunci jawaban.
-# - Wajib menyertakan kunci: "pemahaman", "kelengkapan", "kejelasan", "analisis", "feedback".
-# - "feedback" = 1-2 kalimat, sebutkan kelebihan atau kekurangan spesifik dibanding kunci jawaban. Jangan menyalin jawaban mahasiswa.
-
-# Contoh output:
-# {{
-#    "pemahaman": float,
-#    "kelengkapan": float,
-#    "kejelasan": float,
-#    "analisis": float,
-#    "feedback": string
-# }}
-# """
-
-    long_prompt = f"""
-Anda adalah sistem penilai jawaban esai yang objektif dan konsisten, menilai berdasarkan rubrik yang ketat serta mencocokkan isi jawaban mahasiswa dengan kunci jawaban yang diberikan.
-
-Rubrik Penilaian Sederhana (0-100)
-1. Pemahaman Konsep: Seberapa tepat mahasiswa memahami ide utama.
-90-100: Tepat dan lengkap
-70-89: Cukup tepat, ada sedikit kesalahan
-20-69: Banyak kekeliruan konsep
-<20: Salah total
-
-2. Kelengkapan Jawaban: Seberapa banyak poin penting dari kunci jawaban tercakup.
-90-100: Semua poin penting ada
-70-89: Sebagian besar poin ada
-20-69: Banyak poin hilang
-<20: Hampir tidak ada poin penting
-
-3. Kejelasan Bahasa: Seberapa mudah jawaban dibaca dan dipahami.
-90-100: Jelas dan rapi
-70-89: Cukup jelas, ada kesalahan kecil
-20-69: Kurang jelas
-<20: Sulit dipahami
-
-4. Analisis / Argumen: Seberapa logis dan mendalam penjelasan.
-90-100: Logis dan mendalam
-70-89: Cukup logis, agak dangkal
-20-69: Lemah atau dangkal
-<20: Tidak ada analisis
-
+=== DATA ===
 Pertanyaan:
-{question}
+"{question}"
 
-Kunci Jawaban:
-{answer_key}
+Kunci Jawaban Ideal:
+"{answer_key}"
 
 Jawaban Mahasiswa:
-{student_answer}
+"{student_answer}"
 
-### PETUNJUK OUTPUT
-- Keluarkan **hanya satu blok JSON valid**, mulai dengan `{{` dan diakhiri dengan `}}`.
-- Jangan ragu memberi nilai rendah jika memang jawaban tidak sesuai kunci jawaban.
-- Jangan ragu memberi nilai tinggi jika memang jawaban mendekati kunci jawaban.
-- Semua nilai numerik berupa desimal dengan dua angka di belakang koma, misal 84.25.
-- Wajib menyertakan kunci: "pemahaman", "kelengkapan", "kejelasan", "analisis", "feedback".
-- "feedback" = 1–2 kalimat, sebutkan kelebihan atau kekurangan spesifik dibanding kunci jawaban. Jangan menyalin jawaban mahasiswa.
+=== PETUNJUK PENILAIAN ===
+- Gunakan kunci jawaban sebagai acuan utama, bukan gaya penulisan kode.
+- Jika terdapat kesalahan logika, urutan eksekusi, atau struktur yang tidak sesuai konsep kunci, berikan nilai rendah.
+- Penilaian dilakukan menyeluruh terhadap logika kode dan penjelasan teks.
+- Nilai setiap rubrik antara 0–100 (gunakan dua angka desimal, misalnya 82.75).
 
-Contoh output:
+=== PETUNJUK FEEDBACK ===
+- Feedback singkat (1–2 kalimat), namun harus spesifik dan mengacu pada bagian kode atau logika yang kurang tepat.
+- Sebutkan bagian yang sudah benar dan bagian yang perlu diperbaiki.
+- Hindari kalimat generik seperti “jawaban cukup baik” tanpa alasan.
+- Jika kode mahasiswa hampir benar, jelaskan sedikit perbedaan logikanya.
+- Jika ada kesalahan sintaksis atau konsep, sebutkan dengan jelas.
+
+=== FORMAT OUTPUT ===
+Keluarkan hasil dalam format JSON berikut:
 {{
-   "pemahaman": float,
-   "kelengkapan": float,
-   "kejelasan": float,
-   "analisis": float,
-   "feedback": string
+  "pemahaman": float,
+  "kelengkapan": float,
+  "kejelasan": float,
+  "analisis": float,
+  "feedback": string
 }}
 """
-    if USE_LONG_PROMPT:
-        prompt = long_prompt
+
+    # Cek code di dalam answer_key
+    code_indicators = [
+        r"```", r";", r"\{", r"\}", r"\bfunction\b", r"\bclass\b",
+        r"\bpublic\b", r"\bprivate\b", r"::", r"->", r"==", r"!=",
+        r"\.php\b", r"\.js\b", r"\.py\b"
+    ]
+
+    is_code = any(re.search(p, answer_key) for p in code_indicators)
+
+    if is_code:
+        prompt = coder_prompt
+        print("🛠️ Menggunakan prompt khusus Coder untuk penilaian jawaban pemrograman.")
     else:
-        prompt = short_prompt
+        prompt = default_prompt
+        print("📝 Menggunakan prompt standar untuk penilaian jawaban esai.")
     return prompt
 
 
@@ -211,16 +181,20 @@ def call_ollama(prompt: str, model: str = DEFAULT_MODEL, timeout: int = 90) -> d
 # === 🔹 Parsing JSON Aman ===
 def safe_json_parse(text: str):
     text = re.sub(r'```(?:json)?', '', text, flags=re.IGNORECASE)
-    match = re.search(r'\{.*?\}', text, re.DOTALL)
+
+    match = re.search(r'(\{.*\})', text, flags=re.DOTALL)
     if not match:
         raise ValueError("Tidak ditemukan blok JSON dalam respons.")
-    json_text = match.group(0).strip()
-    json_text = re.sub(r',\s*}', '}', json_text)
+
+    json_text = match.group(1).strip()
+
     json_text = re.sub(r'“|”', '"', json_text)
+
     try:
         return json.loads(json_text)
     except json.JSONDecodeError as e:
         raise ValueError(f"Gagal parsing JSON: {e}\nRaw JSON: {json_text[:500]}")
+
 
 
 # === 🔹 Load Model Embedding Sekali Saja ===
@@ -328,11 +302,19 @@ def warmup_models():
 
     # 🔸 Warm-up Ollama
     try:
-        print("🔹 Warm-up Ollama...")
+        print("🔹 Warm-up Ollama Instruct...")
         prompt = "Warm-up test: Halo, anda akan menjadi asisten penilai jawaban esai yang objektif, konsisten, dan kritis. Konfirmasikan jika anda siap."
         start = time.time()
         call_ollama(prompt, model=DEFAULT_MODEL, timeout=120)
-        print(f"✅ Ollama siap (waktu: {round(time.time() - start, 2)} detik)")
+        print(f"✅ Ollama Instruct siap (waktu: {round(time.time() - start, 2)} detik)")
+    except Exception as e:
+        print(f"⚠️ Gagal warm-up Ollama: {e}")
+    try:
+        print("🔹 Warm-up Ollama Coder...")
+        prompt = "Warm-up test: Halo, anda akan menjadi asisten penilai jawaban esai yang objektif, konsisten, dan kritis. Konfirmasikan jika anda siap."
+        start = time.time()
+        call_ollama(prompt, model=CODER_MODEL, timeout=120)
+        print(f"✅ Ollama Coder siap (waktu: {round(time.time() - start, 2)} detik)")
     except Exception as e:
         print(f"⚠️ Gagal warm-up Ollama: {e}")
 
@@ -347,6 +329,86 @@ def warmup_models():
 
     print("🔥 Semua komponen siap digunakan!\n")
 
+@app.get("/", response_class=HTMLResponse)
+def root():
+    html_content = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Essay Grader</title>
+    <style>
+        body { font-family: Arial; max-width: 800px; margin: auto; padding: 20px; }
+        textarea { width: 100%; height: 80px; margin-bottom: 10px; }
+        button { padding: 10px 20px; font-size: 16px; }
+        #result-container {
+            background: #f4f4f4;
+            padding: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap; /* agar teks wrap jika terlalu panjang */
+            border: 1px solid #ccc;
+        }
+        #loading {
+            display: none;
+            font-size: 16px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <h1>AI Essay Grader</h1>
+    <label>Soal:</label><br>
+    <textarea id="question" placeholder="Masukkan pertanyaan"></textarea><br>
+    <label>Kunci Jawaban:</label><br>
+    <textarea id="answer_key" placeholder="Masukkan jawaban ideal"></textarea><br>
+    <label>Jawaban Mahasiswa:</label><br>
+    <textarea id="student_answer" placeholder="Masukkan jawaban mahasiswa"></textarea><br>
+    <button onclick="submitForm()">Submit</button>
+    <p id="loading">Processing... Please wait.</p>
+
+    <h2>Hasil:</h2>
+    <div id="result-container">
+        <pre id="result">Belum ada hasil</pre>
+    </div>
+
+    <script>
+        async function submitForm() {
+            const question = document.getElementById('question').value;
+            const answer_key = document.getElementById('answer_key').value;
+            const student_answer = document.getElementById('student_answer').value;
+
+            const payload = { question, answer_key, student_answer };
+
+            const loadingElement = document.getElementById('loading');
+            const resultElement = document.getElementById('result');
+
+            loadingElement.style.display = 'block';
+            resultElement.textContent = '';
+
+            try {
+                const response = await fetch('/grade', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultElement.textContent = JSON.stringify(data, null, 2);
+                } else {
+                    resultElement.textContent = 'Error: ' + response.status + ' - ' + await response.text();
+                }
+            } catch (error) {
+                resultElement.textContent = 'Error2: ' + error.message;
+            } finally {
+                loadingElement.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+    return html_content
 
 # === 🔹 Entry Point ===
 if __name__ == "__main__":
