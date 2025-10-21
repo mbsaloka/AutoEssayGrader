@@ -11,7 +11,6 @@ class Nilai(Base):
     total_score = Column(Float, nullable=False)
     max_score = Column(Float, nullable=False)
     percentage = Column(Float, nullable=True)
-    feedback = Column(Text, nullable=True)
     avg_pemahaman = Column(Float, nullable=True)
     avg_kelengkapan = Column(Float, nullable=True)
     avg_kejelasan = Column(Float, nullable=True)

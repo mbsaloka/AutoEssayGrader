@@ -15,13 +15,12 @@ from models.assignment_submission import AssignmentSubmission
 from models.question_answer import QuestionAnswer
 from models.nilai import Nilai
 from models.class_participant import ClassParticipant
-from services.grading_service import grade_submission_batch
+from services.grading_tunneling import grade_submission_batch_via_tunnel
 
 router = APIRouter(prefix="/api/grading", tags=["grading"])
 
 class GradeSubmissionRequest(BaseModel):
     total_score: float
-    feedback: Optional[str] = None
 
 class AutoGradeRequest(BaseModel):
     submission_id: int
@@ -36,7 +35,6 @@ class NilaiResponse(BaseModel):
     total_score: float
     max_score: float
     percentage: Optional[float]
-    feedback: Optional[str]
     graded_at: datetime
 
     class Config:
@@ -83,7 +81,6 @@ class SubmissionDetailResponse(BaseModel):
     total_score: Optional[float]
     max_score: Optional[float]
     percentage: Optional[float]
-    overall_feedback: Optional[str]
     avg_pemahaman: Optional[float]
     avg_kelengkapan: Optional[float]
     avg_kejelasan: Optional[float]
@@ -132,7 +129,6 @@ async def grade_submission(
         existing_nilai.total_score = request.total_score
         existing_nilai.max_score = max_score
         existing_nilai.percentage = percentage
-        existing_nilai.feedback = request.feedback
         existing_nilai.graded_at = datetime.utcnow()
         await db.commit()
         await db.refresh(existing_nilai)
@@ -142,8 +138,7 @@ async def grade_submission(
             submission_id=submission_id,
             total_score=request.total_score,
             max_score=max_score,
-            percentage=percentage,
-            feedback=request.feedback
+            percentage=percentage
         )
         db.add(nilai)
         await db.commit()
@@ -177,200 +172,102 @@ async def auto_grade_submission(
     if submission.assignment.kelas.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Tidak punya permission untuk menilai submission tugas di kelas ini")
     
-    # NOTE: Uncomment kalo AI sudah full implemented
-    # submission_data = {
-    #     "assignment_info": {
-    #         "title": submission.assignment.title,
-    #         "description": submission.assignment.description or ""
-    #     },
-    #     "questions": [
-    #         {
-    #             "question_id": q.id,
-    #             "question_text": q.question_text,
-    #             "reference_answer": q.reference_answer,
-    #             "points": q.points
-    #         }
-    #         for q in submission.assignment.questions
-    #     ],
-    #     "answers": [
-    #         {
-    #             "question_id": qa.question_id,
-    #             "answer_text": qa.answer_text
-    #         }
-    #         for qa in submission.question_answers
-    #     ]
-    # }
-    # 
-    # grading_result = await grade_submission_batch(submission_data)
-    # 
-    # for result_item in grading_result["results"]:
-    #     question_answer = next(
-    #         (qa for qa in submission.question_answers if qa.question_id == result_item["question_id"]),
-    #         None
-    #     )
-    #     
-    #     if question_answer:
-    #         question_answer.final_score = result_item["final_score"]
-    #         question_answer.feedback = result_item["feedback"]
-    #         question_answer.rubric_pemahaman = result_item["rubric_scores"]["pemahaman"]
-    #         question_answer.rubric_kelengkapan = result_item["rubric_scores"]["kelengkapan"]
-    #         question_answer.rubric_kejelasan = result_item["rubric_scores"]["kejelasan"]
-    #         question_answer.rubric_analisis = result_item["rubric_scores"]["analisis"]
-    #         question_answer.rubric_rata_rata = result_item["rubric_scores"]["rata_rata"]
-    #         question_answer.embedding_similarity = result_item["embedding_similarity"]
-    #         question_answer.llm_time = result_item["llm_time"]
-    #         question_answer.similarity_time = result_item["similarity_time"]
-    # 
-    # result = await db.execute(
-    #     select(Nilai).where(Nilai.submission_id == submission_id)
-    # )
-    # existing_nilai = result.scalar_one_or_none()
-    # 
-    # if existing_nilai:
-    #     existing_nilai.total_score = grading_result["total_score"]
-    #     existing_nilai.max_score = grading_result["total_points"]
-    #     existing_nilai.percentage = grading_result["percentage"]
-    #     existing_nilai.feedback = grading_result["overall_feedback"]
-    #     existing_nilai.avg_pemahaman = grading_result["aggregate_rubrics"]["pemahaman"]
-    #     existing_nilai.avg_kelengkapan = grading_result["aggregate_rubrics"]["kelengkapan"]
-    #     existing_nilai.avg_kejelasan = grading_result["aggregate_rubrics"]["kejelasan"]
-    #     existing_nilai.avg_analisis = grading_result["aggregate_rubrics"]["analisis"]
-    #     existing_nilai.avg_embedding_similarity = grading_result["aggregate_rubrics"]["avg_embedding_similarity"]
-    #     existing_nilai.total_llm_time = grading_result["total_llm_time"]
-    #     existing_nilai.total_similarity_time = grading_result["total_similarity_time"]
-    #     existing_nilai.graded_at = datetime.utcnow()
-    #     await db.commit()
-    #     await db.refresh(existing_nilai)
-    #     nilai = existing_nilai
-    # else:
-    #     nilai = Nilai(
-    #         submission_id=submission_id,
-    #         total_score=grading_result["total_score"],
-    #         max_score=grading_result["total_points"],
-    #         percentage=grading_result["percentage"],
-    #         feedback=grading_result["overall_feedback"],
-    #         avg_pemahaman=grading_result["aggregate_rubrics"]["pemahaman"],
-    #         avg_kelengkapan=grading_result["aggregate_rubrics"]["kelengkapan"],
-    #         avg_kejelasan=grading_result["aggregate_rubrics"]["kejelasan"],
-    #         avg_analisis=grading_result["aggregate_rubrics"]["analisis"],
-    #         avg_embedding_similarity=grading_result["aggregate_rubrics"]["avg_embedding_similarity"],
-    #         total_llm_time=grading_result["total_llm_time"],
-    #         total_similarity_time=grading_result["total_similarity_time"]
-    #     )
-    #     db.add(nilai)
-    #     await db.commit()
-    #     await db.refresh(nilai)
-    # 
-    # return {
-    #     "message": "Submission auto-graded successfully",
-    #     "total_score": nilai.total_score,
-    #     "max_score": nilai.max_score,
-    #     "percentage": nilai.percentage,
-    #     "aggregate_rubrics": grading_result["aggregate_rubrics"],
-    #     "question_results": grading_result["results"],
-    #     "total_llm_time": grading_result["total_llm_time"],
-    #     "total_similarity_time": grading_result["total_similarity_time"]
-    # }
-
-    # === DUMMY GRADING CODE (remove when using Ollama) ===
-    dummy_results = []
-    total_points = sum(q.points for q in submission.assignment.questions)
-    
-    # Update question answers with dummy scores
-    for qa in submission.question_answers:
-        q = next((q for q in submission.assignment.questions if q.id == qa.question_id), None)
-        if q:
-            dummy_score = round(q.points * 0.85, 2)
-            
-            # Save dummy scores to question answer
-            qa.final_score = dummy_score
-            qa.feedback = "Dummy feedback - Ollama not yet configured"
-            qa.rubric_pemahaman = 85.0
-            qa.rubric_kelengkapan = 85.0
-            qa.rubric_kejelasan = 85.0
-            qa.rubric_analisis = 85.0
-            qa.rubric_rata_rata = 85.0
-            qa.embedding_similarity = 85.0
-            qa.llm_time = 0.5
-            qa.similarity_time = 0.1
-            
-            dummy_results.append({
+    # Prepare submission data for AI grading
+    submission_data = {
+        "assignment_info": {
+            "title": submission.assignment.title,
+            "description": submission.assignment.description or ""
+        },
+        "questions": [
+            {
+                "question_id": q.id,
+                "question_text": q.question_text,
+                "reference_answer": q.reference_answer,
+                "points": q.points
+            }
+            for q in submission.assignment.questions
+        ],
+        "answers": [
+            {
                 "question_id": qa.question_id,
-                "final_score": dummy_score,
-                "feedback": "Dummy feedback - Ollama not yet configured",
-                "rubric_scores": {
-                    "pemahaman": 85.0,
-                    "kelengkapan": 85.0,
-                    "kejelasan": 85.0,
-                    "analisis": 85.0,
-                    "rata_rata": 85.0
-                },
-                "embedding_similarity": 85.0,
-                "llm_time": 0.5,
-                "similarity_time": 0.1
-            })
+                "answer_text": qa.answer_text
+            }
+            for qa in submission.question_answers
+        ]
+    }
     
-    dummy_total_score = sum(r["final_score"] for r in dummy_results)
-    dummy_percentage = round((dummy_total_score / total_points * 100), 2) if total_points > 0 else 0.0
+    # Call AI tunnel for grading
+    try:
+        grading_result = await grade_submission_batch_via_tunnel(submission_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI grading failed: {str(e)}")
     
-    # Check if Nilai already exists
+    
+    for result_item in grading_result["results"]:
+        question_answer = next(
+            (qa for qa in submission.question_answers if qa.question_id == result_item["question_id"]),
+            None
+        )
+        
+        if question_answer:
+            question_answer.final_score = result_item["final_score"]
+            question_answer.feedback = result_item["feedback"]
+            question_answer.rubric_pemahaman = result_item["rubric_scores"]["pemahaman"]
+            question_answer.rubric_kelengkapan = result_item["rubric_scores"]["kelengkapan"]
+            question_answer.rubric_kejelasan = result_item["rubric_scores"]["kejelasan"]
+            question_answer.rubric_analisis = result_item["rubric_scores"]["analisis"]
+            question_answer.rubric_rata_rata = result_item["rubric_scores"]["rata_rata"]
+            question_answer.embedding_similarity = result_item["embedding_similarity"]
+            question_answer.llm_time = result_item["llm_time"]
+            question_answer.similarity_time = result_item["similarity_time"]
+    
     result = await db.execute(
         select(Nilai).where(Nilai.submission_id == submission_id)
     )
     existing_nilai = result.scalar_one_or_none()
     
     if existing_nilai:
-        # Update existing Nilai
-        existing_nilai.total_score = dummy_total_score
-        existing_nilai.max_score = total_points
-        existing_nilai.percentage = dummy_percentage
-        existing_nilai.feedback = "Dummy grading - Ollama not yet configured. This is a test score."
-        existing_nilai.avg_pemahaman = 85.0
-        existing_nilai.avg_kelengkapan = 85.0
-        existing_nilai.avg_kejelasan = 85.0
-        existing_nilai.avg_analisis = 85.0
-        existing_nilai.avg_embedding_similarity = 85.0
-        existing_nilai.total_llm_time = 0.5
-        existing_nilai.total_similarity_time = 0.1
+        existing_nilai.total_score = grading_result["total_score"]
+        existing_nilai.max_score = grading_result["total_points"]
+        existing_nilai.percentage = grading_result["percentage"]
+        existing_nilai.avg_pemahaman = grading_result["aggregate_rubrics"]["pemahaman"]
+        existing_nilai.avg_kelengkapan = grading_result["aggregate_rubrics"]["kelengkapan"]
+        existing_nilai.avg_kejelasan = grading_result["aggregate_rubrics"]["kejelasan"]
+        existing_nilai.avg_analisis = grading_result["aggregate_rubrics"]["analisis"]
+        existing_nilai.avg_embedding_similarity = grading_result["aggregate_rubrics"]["avg_embedding_similarity"]
+        existing_nilai.total_llm_time = grading_result["total_llm_time"]
+        existing_nilai.total_similarity_time = grading_result["total_similarity_time"]
         existing_nilai.graded_at = datetime.utcnow()
         await db.commit()
         await db.refresh(existing_nilai)
+        nilai = existing_nilai
     else:
-        # Create new Nilai
         nilai = Nilai(
             submission_id=submission_id,
-            total_score=dummy_total_score,
-            max_score=total_points,
-            percentage=dummy_percentage,
-            feedback="Dummy grading - Ollama not yet configured. This is a test score.",
-            avg_pemahaman=85.0,
-            avg_kelengkapan=85.0,
-            avg_kejelasan=85.0,
-            avg_analisis=85.0,
-            avg_embedding_similarity=85.0,
-            total_llm_time=0.5,
-            total_similarity_time=0.1
+            total_score=grading_result["total_score"],
+            max_score=grading_result["total_points"],
+            percentage=grading_result["percentage"],
+            avg_pemahaman=grading_result["aggregate_rubrics"]["pemahaman"],
+            avg_kelengkapan=grading_result["aggregate_rubrics"]["kelengkapan"],
+            avg_kejelasan=grading_result["aggregate_rubrics"]["kejelasan"],
+            avg_analisis=grading_result["aggregate_rubrics"]["analisis"],
+            avg_embedding_similarity=grading_result["aggregate_rubrics"]["avg_embedding_similarity"],
+            total_llm_time=grading_result["total_llm_time"],
+            total_similarity_time=grading_result["total_similarity_time"]
         )
         db.add(nilai)
         await db.commit()
         await db.refresh(nilai)
-    # === END DUMMY GRADING CODE ===
     
     return {
-        "message": "Auto-grading disabled (Ollama not configured). Uncomment code in routers/grading.py when ready.",
-        "total_score": dummy_total_score,
-        "max_score": total_points,
-        "percentage": dummy_percentage,
-        "aggregate_rubrics": {
-            "pemahaman": 85.0,
-            "kelengkapan": 85.0,
-            "kejelasan": 85.0,
-            "analisis": 85.0,
-            "avg_embedding_similarity": 85.0
-        },
-        "question_results": dummy_results,
-        "total_llm_time": 0.5,
-        "total_similarity_time": 0.1
+        "message": "Submission auto-graded successfully via AI tunnel",
+        "total_score": nilai.total_score,
+        "max_score": nilai.max_score,
+        "percentage": nilai.percentage,
+        "aggregate_rubrics": grading_result["aggregate_rubrics"],
+        "question_results": grading_result["results"],
+        "total_llm_time": grading_result["total_llm_time"],
+        "total_similarity_time": grading_result["total_similarity_time"]
     }
 
 @router.post("/assignments/{assignment_id}/auto-grade-all", status_code=status.HTTP_200_OK)
@@ -405,127 +302,82 @@ async def auto_grade_all_submissions(
     )
     submissions = result.scalars().all()
     
-    # NOTE: Uncomment kalo AI sudah full implemented
-    # graded_count = 0
-    # for submission in submissions:
-    #     if not submission.nilai:
-    #         submission_data = {
-    #             "assignment_info": {
-    #                 "title": assignment.title,
-    #                 "description": assignment.description or ""
-    #             },
-    #             "questions": [
-    #                 {
-    #                     "question_id": q.id,
-    #                     "question_text": q.question_text,
-    #                     "reference_answer": q.reference_answer,
-    #                     "points": q.points
-    #                 }
-    #                 for q in assignment.questions
-    #             ],
-    #             "answers": [
-    #                 {
-    #                     "question_id": qa.question_id,
-    #                     "answer_text": qa.answer_text
-    #                 }
-    #                 for qa in submission.question_answers
-    #             ]
-    #         }
-    #         
-    #         grading_result = await grade_submission_batch(submission_data)
-    #         
-    #         for result_item in grading_result["results"]:
-    #             question_answer = next(
-    #                 (qa for qa in submission.question_answers if qa.question_id == result_item["question_id"]),
-    #                 None
-    #             )
-    #             
-    #             if question_answer:
-    #                 question_answer.final_score = result_item["final_score"]
-    #                 question_answer.feedback = result_item["feedback"]
-    #                 question_answer.rubric_pemahaman = result_item["rubric_scores"]["pemahaman"]
-    #                 question_answer.rubric_kelengkapan = result_item["rubric_scores"]["kelengkapan"]
-    #                 question_answer.rubric_kejelasan = result_item["rubric_scores"]["kejelasan"]
-    #                 question_answer.rubric_analisis = result_item["rubric_scores"]["analisis"]
-    #                 question_answer.rubric_rata_rata = result_item["rubric_scores"]["rata_rata"]
-    #                 question_answer.embedding_similarity = result_item["embedding_similarity"]
-    #                 question_answer.llm_time = result_item["llm_time"]
-    #                 question_answer.similarity_time = result_item["similarity_time"]
-    #         
-    #         nilai = Nilai(
-    #             submission_id=submission.id,
-    #             total_score=grading_result["total_score"],
-    #             max_score=grading_result["total_points"],
-    #             percentage=grading_result["percentage"],
-    #             feedback=grading_result["overall_feedback"],
-    #             avg_pemahaman=grading_result["aggregate_rubrics"]["pemahaman"],
-    #             avg_kelengkapan=grading_result["aggregate_rubrics"]["kelengkapan"],
-    #             avg_kejelasan=grading_result["aggregate_rubrics"]["kejelasan"],
-    #             avg_analisis=grading_result["aggregate_rubrics"]["analisis"],
-    #             avg_embedding_similarity=grading_result["aggregate_rubrics"]["avg_embedding_similarity"],
-    #             total_llm_time=grading_result["total_llm_time"],
-    #             total_similarity_time=grading_result["total_similarity_time"]
-    #         )
-    #         db.add(nilai)
-    #         graded_count += 1
-    # 
-    # await db.commit()
-    # 
-    # return {
-    #     "message": f"Auto-graded {graded_count} submissions successfully",
-    #     "total_submissions": len(submissions),
-    #     "newly_graded": graded_count
-    # }
-    
-    # === DUMMY GRADING CODE (remove when using Ollama) ===
     graded_count = 0
-    total_points = sum(q.points for q in assignment.questions)
+    failed_count = 0
     
     for submission in submissions:
         if not submission.nilai:  # Only grade ungraded submissions
-            # Update question answers with dummy scores
-            for qa in submission.question_answers:
-                q = next((q for q in assignment.questions if q.id == qa.question_id), None)
-                if q:
-                    qa.final_score = round(q.points * 0.85, 2)
-                    qa.feedback = "Dummy feedback - Ollama not yet configured"
-                    qa.rubric_pemahaman = 85.0
-                    qa.rubric_kelengkapan = 85.0
-                    qa.rubric_kejelasan = 85.0
-                    qa.rubric_analisis = 85.0
-                    qa.rubric_rata_rata = 85.0
-                    qa.embedding_similarity = 85.0
-                    qa.llm_time = 0.5
-                    qa.similarity_time = 0.1
+            submission_data = {
+                "assignment_info": {
+                    "title": assignment.title,
+                    "description": assignment.description or ""
+                },
+                "questions": [
+                    {
+                        "question_id": q.id,
+                        "question_text": q.question_text,
+                        "reference_answer": q.reference_answer,
+                        "points": q.points
+                    }
+                    for q in assignment.questions
+                ],
+                "answers": [
+                    {
+                        "question_id": qa.question_id,
+                        "answer_text": qa.answer_text
+                    }
+                    for qa in submission.question_answers
+                ]
+            }
             
-            # Create Nilai record
-            dummy_total_score = round(total_points * 0.85, 2)
-            dummy_percentage = 85.0
-            
-            nilai = Nilai(
-                submission_id=submission.id,
-                total_score=dummy_total_score,
-                max_score=total_points,
-                percentage=dummy_percentage,
-                feedback="Dummy grading - Ollama not yet configured. This is a test score.",
-                avg_pemahaman=85.0,
-                avg_kelengkapan=85.0,
-                avg_kejelasan=85.0,
-                avg_analisis=85.0,
-                avg_embedding_similarity=85.0,
-                total_llm_time=0.5,
-                total_similarity_time=0.1
-            )
-            db.add(nilai)
-            graded_count += 1
+            try:
+                grading_result = await grade_submission_batch_via_tunnel(submission_data)
+                
+                for result_item in grading_result["results"]:
+                    question_answer = next(
+                        (qa for qa in submission.question_answers if qa.question_id == result_item["question_id"]),
+                        None
+                    )
+                    
+                    if question_answer:
+                        question_answer.final_score = result_item["final_score"]
+                        question_answer.feedback = result_item["feedback"]
+                        question_answer.rubric_pemahaman = result_item["rubric_scores"]["pemahaman"]
+                        question_answer.rubric_kelengkapan = result_item["rubric_scores"]["kelengkapan"]
+                        question_answer.rubric_kejelasan = result_item["rubric_scores"]["kejelasan"]
+                        question_answer.rubric_analisis = result_item["rubric_scores"]["analisis"]
+                        question_answer.rubric_rata_rata = result_item["rubric_scores"]["rata_rata"]
+                        question_answer.embedding_similarity = result_item["embedding_similarity"]
+                        question_answer.llm_time = result_item["llm_time"]
+                        question_answer.similarity_time = result_item["similarity_time"]
+                
+                nilai = Nilai(
+                    submission_id=submission.id,
+                    total_score=grading_result["total_score"],
+                    max_score=grading_result["total_points"],
+                    percentage=grading_result["percentage"],
+                    avg_pemahaman=grading_result["aggregate_rubrics"]["pemahaman"],
+                    avg_kelengkapan=grading_result["aggregate_rubrics"]["kelengkapan"],
+                    avg_kejelasan=grading_result["aggregate_rubrics"]["kejelasan"],
+                    avg_analisis=grading_result["aggregate_rubrics"]["analisis"],
+                    avg_embedding_similarity=grading_result["aggregate_rubrics"]["avg_embedding_similarity"],
+                    total_llm_time=grading_result["total_llm_time"],
+                    total_similarity_time=grading_result["total_similarity_time"]
+                )
+                db.add(nilai)
+                graded_count += 1
+            except Exception as e:
+                print(f"❌ Failed to grade submission {submission.id}: {str(e)}")
+                failed_count += 1
+                continue
     
     await db.commit()
-    # === END DUMMY GRADING CODE ===
     
     return {
-        "message": f"Auto-grading disabled (Ollama not configured). Graded {graded_count} submissions with dummy scores.",
+        "message": f"Auto-graded {graded_count} submissions successfully via AI tunnel",
         "total_submissions": len(submissions),
-        "newly_graded": graded_count
+        "newly_graded": graded_count,
+        "failed": failed_count
     }
 
 @router.get("/assignments/{assignment_id}/statistics", response_model=AssignmentStatisticsResponse)
@@ -650,7 +502,6 @@ async def get_assignment_grades(
             total_score=grade.total_score,
             max_score=grade.max_score,
             percentage=grade.percentage,
-            feedback=grade.feedback,
             graded_at=grade.graded_at
         )
         for grade in grades
@@ -710,7 +561,6 @@ async def get_submission_details(
         total_score=submission.nilai.total_score if submission.nilai else None,
         max_score=submission.nilai.max_score if submission.nilai else None,
         percentage=submission.nilai.percentage if submission.nilai else None,
-        overall_feedback=submission.nilai.feedback if submission.nilai else None,
         avg_pemahaman=submission.nilai.avg_pemahaman if submission.nilai else None,
         avg_kelengkapan=submission.nilai.avg_kelengkapan if submission.nilai else None,
         avg_kejelasan=submission.nilai.avg_kejelasan if submission.nilai else None,
@@ -751,7 +601,6 @@ async def get_student_grades(
             total_score=grade.total_score,
             max_score=grade.max_score,
             percentage=grade.percentage,
-            feedback=grade.feedback,
             graded_at=grade.graded_at
         )
         for grade in grades

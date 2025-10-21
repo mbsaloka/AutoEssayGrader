@@ -210,7 +210,6 @@ export interface SubmissionResponse {
     file_path?: string;
     submitted_at: string;
     score?: number;
-    feedback?: string;
 }
 
 export interface MySubmissionResponse {
@@ -228,15 +227,13 @@ export interface MySubmissionResponse {
     total_score?: number;
     max_score?: number;
     percentage?: number;
-    overall_feedback?: string;
     graded?: boolean;
     submission?: SubmissionResponse;
 }
 
 // ==================== GRADING TYPES ====================
 export interface GradeSubmissionRequest {
-    score: number;
-    feedback?: string;
+    total_score: number;
 }
 
 export interface QuestionAnswer {
@@ -266,7 +263,6 @@ export interface NilaiResponse {
     total_score: number;
     max_score: number;
     percentage?: number;
-    feedback?: string;
     avg_pemahaman?: number;
     avg_kelengkapan?: number;
     avg_kejelasan?: number;
@@ -333,7 +329,6 @@ export interface SubmissionDetailResponse {
     total_score?: number;
     max_score?: number;
     percentage?: number;
-    overall_feedback?: string;
     avg_pemahaman?: number;
     avg_kelengkapan?: number;
     avg_kejelasan?: number;

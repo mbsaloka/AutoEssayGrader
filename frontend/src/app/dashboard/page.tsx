@@ -19,6 +19,8 @@ import {
 	Calendar,
 	Books,
 	X,
+	Pencil,
+	Trash,
 } from "phosphor-react";
 
 export default function HomePage() {
@@ -76,8 +78,11 @@ function HomeContent() {
 	const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 	const [classCode, setClassCode] = useState("");
 	const [isJoining, setIsJoining] = useState(false);
+	const [openDropdownId, setOpenDropdownId] = useState<number | null>(null);
+	const [isDeletingId, setIsDeletingId] = useState<number | null>(null);
 	const { isAuthenticated, user } = useAuth();
 	const queryClient = useQueryClient();
+	const router = useRouter();
 
 	const {
 		data: classes,
@@ -120,6 +125,48 @@ function HomeContent() {
 			setIsJoining(false);
 		}
 	};
+
+	const handleDeleteClass = async (classId: number, className: string) => {
+		if (!confirm(`Apakah Anda yakin ingin menghapus kelas "${className}"? Tindakan ini tidak dapat dibatalkan.`)) {
+			return;
+		}
+
+		setIsDeletingId(classId);
+		setOpenDropdownId(null);
+
+		try {
+			await classService.deleteClass(classId);
+			toast.success("Kelas berhasil dihapus!");
+			queryClient.invalidateQueries({ queryKey: ["classes"] });
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		} catch (error: any) {
+			console.error("Error deleting class:", error);
+			toast.error(
+				error.response?.data?.detail || "Gagal menghapus kelas"
+			);
+		} finally {
+			setIsDeletingId(null);
+		}
+	};
+
+	const handleEditClass = (classId: number) => {
+		setOpenDropdownId(null);
+		router.push(`/kelas/${classId}/edit`);
+	};
+
+	// Close dropdown when clicking outside
+	useEffect(() => {
+		const handleClickOutside = () => {
+			if (openDropdownId !== null) {
+				setOpenDropdownId(null);
+			}
+		};
+
+		document.addEventListener("click", handleClickOutside);
+		return () => {
+			document.removeEventListener("click", handleClickOutside);
+		};
+	}, [openDropdownId]);
 
 	useEffect(() => {
 		if (error) {
@@ -254,76 +301,119 @@ function HomeContent() {
 						</div>
 					)}
 
-					{filteredClasses.map((cls, index) => (
-						<Link key={cls.id} href={`/kelas/${cls.id}`}>
-							<div
-								className={`relative h-48 sm:h-56 rounded-2xl overflow-hidden transition-all hover:scale-[1.02] shadow-lg cursor-pointer ${getClassColor(
-									index
-								)}`}
-							>
-								<div className="relative z-10 p-4 sm:p-6 h-full flex flex-col">
-									<div className="flex items-start justify-between mb-auto">
-										<div className="w-10 h-10 sm:w-12 sm:h-12 rounded bg-white/20 flex items-center justify-center">
-											<Books
-												className="w-5 h-5 sm:w-6 sm:h-6 text-dark dark:text-gray-200"
-												weight="bold"
-											/>
-										</div>
-										<button
-											onClick={(e) => {
-												e.preventDefault();
-												e.stopPropagation();
-												toast("Menu opsi kelas");
-											}}
-											className="text-white hover:bg-white/20 rounded-full p-1.5 transition-colors"
-										>
-											<DotsThreeVertical
-												className="w-5 h-5"
-												weight="bold"
-											/>
-										</button>
-									</div>
-									<div className="mt-4">
-										<h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-2 sm:mb-3">
-											{cls.name}
-										</h3>
-										<p className="text-sm text-white/80 mb-2">
-											{cls.teacher_name}
-										</p>
-										<div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 text-white/90 text-xs sm:text-sm">
-											<div className="flex items-center gap-1.5">
-												<Calendar
-													className="w-4 h-4"
+					{filteredClasses.map((cls, index) => {
+						const isTeacher = user?.user_role === "dosen" && cls.teacher_id === user.id;
+						
+						return (
+						<div key={cls.id} className="relative">
+							<Link href={`/kelas/${cls.id}`}>
+								<div
+									className={`relative h-48 sm:h-56 rounded-2xl overflow-hidden transition-all hover:scale-[1.02] shadow-lg cursor-pointer ${getClassColor(
+										index
+									)}`}
+								>
+									<div className="relative z-10 p-4 sm:p-6 h-full flex flex-col">
+										<div className="flex items-start justify-between mb-auto">
+											<div className="w-10 h-10 sm:w-12 sm:h-12 rounded bg-white/20 flex items-center justify-center">
+												<Books
+													className="w-5 h-5 sm:w-6 sm:h-6 text-dark dark:text-gray-200"
 													weight="bold"
 												/>
-												<span>
-													{new Date(
-														cls.created_at
-													).toLocaleDateString(
-														"id-ID",
-														{
-															day: "numeric",
-															month: "short",
-														}
-													)}
-												</span>
 											</div>
-											<div className="flex items-center gap-1.5">
-												<Users
-													className="w-4 h-4"
-													weight="bold"
-												/>
-												<span>
-													{cls.participant_count}{" "}
-													peserta
-												</span>
+											{isTeacher && (
+												<div className="relative">
+													<button
+														onClick={(e) => {
+															e.preventDefault();
+															e.stopPropagation();
+															setOpenDropdownId(openDropdownId === cls.id ? null : cls.id);
+														}}
+														className="text-white hover:bg-white/20 rounded-full p-1.5 transition-colors"
+													>
+														<DotsThreeVertical
+															className="w-5 h-5"
+															weight="bold"
+														/>
+													</button>
+													{openDropdownId === cls.id && (
+														<div 
+															className="absolute right-0 mt-2 w-48 bg-[#1e1f22] rounded-lg shadow-lg border border-gray-700 z-50"
+															onClick={(e) => {
+																e.preventDefault();
+																e.stopPropagation();
+															}}
+														>
+															<button
+																onClick={(e) => {
+																	e.preventDefault();
+																	e.stopPropagation();
+																	handleEditClass(cls.id);
+																}}
+																className="w-full flex items-center gap-3 px-4 py-3 text-left text-white hover:bg-gray-700 transition-colors rounded-t-lg"
+															>
+																<Pencil className="w-4 h-4" weight="bold" />
+																<span>Edit Kelas</span>
+															</button>
+															<button
+																onClick={(e) => {
+																	e.preventDefault();
+																	e.stopPropagation();
+																	handleDeleteClass(cls.id, cls.name);
+																}}
+																disabled={isDeletingId === cls.id}
+																className="w-full flex items-center gap-3 px-4 py-3 text-left text-red-400 hover:bg-gray-700 transition-colors rounded-b-lg disabled:opacity-50"
+															>
+																<Trash className="w-4 h-4" weight="bold" />
+																<span>{isDeletingId === cls.id ? "Menghapus..." : "Hapus Kelas"}</span>
+															</button>
+														</div>
+													)}
+												</div>
+											)}
+										</div>
+										<div className="mt-4">
+											<h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-2 sm:mb-3">
+												{cls.name}
+											</h3>
+											<p className="text-sm text-white/80 mb-2">
+												{cls.teacher_name}
+											</p>
+											<div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 text-white/90 text-xs sm:text-sm">
+												<div className="flex items-center gap-1.5">
+													<Calendar
+														className="w-4 h-4"
+														weight="bold"
+													/>
+													<span>
+														{new Date(
+															cls.created_at
+														).toLocaleDateString(
+															"id-ID",
+															{
+																day: "numeric",
+																month: "short",
+															}
+														)}
+													</span>
+												</div>
+												<div className="flex items-center gap-1.5">
+													<Users
+														className="w-4 h-4"
+														weight="bold"
+													/>
+													<span>
+														{cls.participant_count}{" "}
+														peserta
+													</span>
+												</div>
 											</div>
 										</div>
 									</div>
 								</div>
-							</div>
-						</Link>
-					))}
+							</Link>
+						</div>
+						);
+					})}
 				</div>
 				{filteredClasses.length === 0 && (
 					<div className="text-center py-12 sm:py-20">

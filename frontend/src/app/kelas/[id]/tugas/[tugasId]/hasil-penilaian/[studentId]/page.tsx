@@ -80,7 +80,6 @@ function DetailPenilaianContent() {
 				total_score: studentSubmissionData.total_score,
 				max_score: studentSubmissionData.max_score,
 				percentage: studentSubmissionData.percentage,
-				overall_feedback: studentSubmissionData.overall_feedback,
 				avg_pemahaman: studentSubmissionData.avg_pemahaman,
 				avg_kelengkapan: studentSubmissionData.avg_kelengkapan,
 				avg_kejelasan: studentSubmissionData.avg_kejelasan,
@@ -323,20 +322,6 @@ function DetailPenilaianContent() {
 									</p>
 								</div>
 							)}
-						</div>
-					</div>
-				)}
-
-				{/* Feedback Section */}
-				{gradeDetail.overall_feedback && (
-					<div className="mb-6 sm:mb-8">
-						<h2 className="text-lg sm:text-xl font-semibold text-white mb-4">
-							Feedback Keseluruhan
-						</h2>
-						<div className="bg-[#1e1f22] border border-gray-700 rounded-xl p-4 sm:p-6">
-							<p className="text-gray-300 leading-relaxed">
-								{gradeDetail.overall_feedback}
-							</p>
 						</div>
 					</div>
 				)}

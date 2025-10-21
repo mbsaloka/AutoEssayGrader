@@ -13,6 +13,8 @@ import {
 	useClassAssignments,
 	useDeleteAssignment,
 } from "@/hooks/useAssignments";
+import { classService } from "@/services";
+import toast from "react-hot-toast";
 import {
 	ArrowLeft,
 	Eye,
@@ -22,6 +24,7 @@ import {
 	CalendarBlank,
 	Trash,
 	PencilSimple,
+	Pencil,
 } from "phosphor-react";
 
 export default function ClassDetailPage() {
@@ -45,12 +48,47 @@ function ClassDetailContent() {
 	const deleteAssignment = useDeleteAssignment();
 
 	const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+	const [isClassMenuOpen, setIsClassMenuOpen] = useState(false);
+	const [isDeletingClass, setIsDeletingClass] = useState(false);
 	const menuRef = useRef<HTMLDivElement>(null);
+	const classMenuRef = useRef<HTMLDivElement>(null);
 
 	const isTeacher = user?.id === classData?.teacher_id;
 
 	const handleBack = () => {
 		router.push("/dashboard");
+	};
+
+	const handleEditClass = () => {
+		setIsClassMenuOpen(false);
+		router.push(`/kelas/${classId}/edit`);
+	};
+
+	const handleDeleteClass = async () => {
+		if (!classData) return;
+
+		if (
+			!window.confirm(
+				`Apakah Anda yakin ingin menghapus kelas "${classData.name}"? Semua data tugas dan peserta akan hilang. Tindakan ini tidak dapat dibatalkan.`
+			)
+		) {
+			return;
+		}
+
+		setIsDeletingClass(true);
+		setIsClassMenuOpen(false);
+
+		try {
+			await classService.deleteClass(classId);
+			toast.success("Kelas berhasil dihapus!");
+			router.push("/dashboard");
+		} catch (error: any) {
+			console.error("Error deleting class:", error);
+			toast.error(
+				error.response?.data?.detail || "Gagal menghapus kelas"
+			);
+			setIsDeletingClass(false);
+		}
 	};
 
 	const getAssignmentColor = (index: number) => {
@@ -91,6 +129,12 @@ function ClassDetailContent() {
 				!menuRef.current.contains(event.target as Node)
 			) {
 				setOpenMenuId(null);
+			}
+			if (
+				classMenuRef.current &&
+				!classMenuRef.current.contains(event.target as Node)
+			) {
+				setIsClassMenuOpen(false);
 			}
 		};
 
@@ -136,7 +180,7 @@ function ClassDetailContent() {
 				{/* Header */}
 				<div className="mb-6 sm:mb-8">
 					<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-4">
-						<div className="flex items-center gap-3 sm:gap-4">
+						<div className="flex items-center gap-3 sm:gap-4 flex-1">
 							<button
 								onClick={handleBack}
 								className="text-white hover:text-gray-300 transition-colors"
@@ -146,10 +190,57 @@ function ClassDetailContent() {
 									weight="bold"
 								/>
 							</button>
-							<div>
-								<h1 className="text-2xl sm:text-3xl font-bold text-white">
-									{classData.name}
-								</h1>
+							<div className="flex-1">
+								<div className="flex items-center gap-2">
+									<h1 className="text-2xl sm:text-3xl font-bold text-white">
+										{classData.name}
+									</h1>
+									{isTeacher && (
+										<div className="relative" ref={classMenuRef}>
+											<button
+												onClick={() =>
+													setIsClassMenuOpen(!isClassMenuOpen)
+												}
+												disabled={isDeletingClass}
+												className="text-gray-400 hover:text-white hover:bg-white/10 rounded-full p-1.5 transition-colors disabled:opacity-50"
+											>
+												<DotsThreeVertical
+													className="w-5 h-5"
+													weight="bold"
+												/>
+											</button>
+											{isClassMenuOpen && (
+												<div className="absolute left-0 top-full mt-2 w-48 bg-[#1e1f22] border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+													<button
+														onClick={handleEditClass}
+														className="w-full px-4 py-3 text-left text-white hover:bg-gray-700 transition-colors flex items-center gap-3"
+													>
+														<Pencil
+															className="w-4 h-4"
+															weight="bold"
+														/>
+														<span>Edit Kelas</span>
+													</button>
+													<button
+														onClick={handleDeleteClass}
+														disabled={isDeletingClass}
+														className="w-full px-4 py-3 text-left text-red-400 hover:bg-gray-700 transition-colors flex items-center gap-3 disabled:opacity-50"
+													>
+														<Trash
+															className="w-4 h-4"
+															weight="bold"
+														/>
+														<span>
+															{isDeletingClass
+																? "Menghapus..."
+																: "Hapus Kelas"}
+														</span>
+													</button>
+												</div>
+											)}
+										</div>
+									)}
+								</div>
 								<p className="text-sm text-gray-400 mt-1">
 									{classData.teacher_name}
 								</p>
