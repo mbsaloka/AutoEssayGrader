@@ -27,3 +27,7 @@ requests
 # pydantic
 # bert-score
 # sentence-transformers
+
+sqlalchemy
+psycopg2-binary
+asyncpg
