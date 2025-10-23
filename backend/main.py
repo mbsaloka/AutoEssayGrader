@@ -4,7 +4,6 @@ from routers import (
     users,
     oauth,
     auth,
-    ocr,
     classes,
     assignments,
     grading,
@@ -21,7 +20,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,14 +42,14 @@ app.include_router(assignments.router, tags=["assignments"])
 
 app.include_router(grading.router, tags=["grading"])
 
-app.include_router(ocr.router, tags=["ocr"])
+# app.include_router(ocr.router, tags=["ocr"])
 
 
 @app.on_event("startup")
 async def on_startup():
     await create_tables()
     print("Database tables created successfully")
-    
+
     # NOTE: Uncomment kalo AI sudah full implemented
     # from services.grading_service import initialize_embedding_model
     # try:

@@ -16,7 +16,7 @@ from models.assignment_submission import AssignmentSubmission, SubmissionType
 from models.question_answer import QuestionAnswer
 from models.class_participant import ClassParticipant
 from models.nilai import Nilai
-from services.ocr_service import process_uploaded_file
+# from services.ocr_service import process_uploaded_file
 from services.grading_tunneling import grade_submission_batch_via_tunnel
 
 router = APIRouter(prefix="/api/assignments", tags=["assignments"])
@@ -118,17 +118,17 @@ async def create_assignment(
         select(Kelas).where(Kelas.id == request.kelas_id)
     )
     kelas = result.scalar_one_or_none()
-    
+
     if not kelas:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    
+
     if kelas.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Tidak punya permission untuk membuat tugas di kelas ini")
-    
+
     calculated_max_score = sum(q.points for q in request.questions) if request.questions else 100
     max_score = request.max_score if request.max_score is not None else calculated_max_score
     minimal_score = request.minimal_score if request.minimal_score is not None else 75
-    
+
     new_assignment = Assignment(
         kelas_id=request.kelas_id,
         title=request.title,
@@ -137,10 +137,10 @@ async def create_assignment(
         max_score=max_score,
         minimal_score=minimal_score
     )
-    
+
     db.add(new_assignment)
     await db.flush()
-    
+
     for idx, question_data in enumerate(request.questions):
         question = Question(
             assignment_id=new_assignment.id,
@@ -150,10 +150,10 @@ async def create_assignment(
             question_order=idx + 1
         )
         db.add(question)
-    
+
     await db.commit()
     await db.refresh(new_assignment, ["questions"])
-    
+
     return AssignmentResponse(
         id=new_assignment.id,
         kelas_id=new_assignment.kelas_id,
@@ -177,12 +177,12 @@ async def get_class_assignments(
         select(Kelas).where(Kelas.id == class_id)
     )
     kelas = result.scalar_one_or_none()
-    
+
     if not kelas:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    
+
     is_teacher = kelas.teacher_id == current_user.id
-    
+
     if not is_teacher:
         result = await db.execute(
             select(ClassParticipant).where(
@@ -191,20 +191,20 @@ async def get_class_assignments(
             )
         )
         is_participant = result.scalar_one_or_none() is not None
-        
+
         if not is_participant:
             raise HTTPException(status_code=403, detail="Tidak punya permission untuk melihat tugas di kelas ini")
-    
+
     result = await db.execute(
         select(Assignment)
         .options(selectinload(Assignment.questions))
         .where(Assignment.kelas_id == class_id)
     )
     assignments = result.scalars().all()
-    
+
     if not is_teacher:
         assignments = [a for a in assignments if a.is_published]
-    
+
     return [
         AssignmentResponse(
             id=assignment.id,
@@ -237,12 +237,12 @@ async def get_assignment_detail(
         .where(Assignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
-    
+
     is_teacher = assignment.kelas.teacher_id == current_user.id
-    
+
     if not is_teacher:
         result = await db.execute(
             select(ClassParticipant).where(
@@ -251,13 +251,13 @@ async def get_assignment_detail(
             )
         )
         is_participant = result.scalar_one_or_none() is not None
-        
+
         if not is_participant:
             raise HTTPException(status_code=403, detail="Tidak punya permission untuk melihat tugas di kelas ini")
-        
+
         if not assignment.is_published:
             raise HTTPException(status_code=403, detail="Tugas belum diterbitkan")
-    
+
     return AssignmentDetailResponse(
         id=assignment.id,
         kelas_id=assignment.kelas_id,
@@ -283,26 +283,26 @@ async def update_assignment(
     result = await db.execute(
         select(Assignment)
         .options(
-            selectinload(Assignment.kelas), 
+            selectinload(Assignment.kelas),
             selectinload(Assignment.questions),
             selectinload(Assignment.submissions)
         )
         .where(Assignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
-    
+
     if assignment.kelas.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Tidak punya permission untuk mengubah tugas di kelas ini")
-    
+
     if len(assignment.submissions) > 0:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Tidak dapat mengubah tugas. Sudah ada {len(assignment.submissions)} submission(s). Mengubah tidak dapat dilakukan setelah siswa mengumpulkan tugas."
         )
-    
+
     if request.title is not None:
         assignment.title = request.title
     if request.description is not None:
@@ -315,17 +315,17 @@ async def update_assignment(
         assignment.minimal_score = request.minimal_score
     if request.is_published is not None:
         assignment.is_published = request.is_published
-    
+
     if request.questions is not None:
         existing_question_ids = {q.id for q in assignment.questions}
         updated_question_ids = {q.id for q in request.questions if q.id is not None}
-        
+
         questions_to_delete = existing_question_ids - updated_question_ids
         if questions_to_delete:
             await db.execute(
                 delete(Question).where(Question.id.in_(questions_to_delete))
             )
-        
+
         for idx, question_update in enumerate(request.questions):
             if question_update.id is not None:
                 result = await db.execute(
@@ -350,10 +350,10 @@ async def update_assignment(
                         question_order=idx + 1
                     )
                     db.add(new_question)
-    
+
     await db.commit()
     await db.refresh(assignment, ["questions"])
-    
+
     return AssignmentResponse(
         id=assignment.id,
         kelas_id=assignment.kelas_id,
@@ -379,16 +379,16 @@ async def delete_assignment(
         .where(Assignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
-    
+
     if assignment.kelas.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Tidak punya permission untuk menghapus tugas di kelas ini")
-    
+
     await db.delete(assignment)
     await db.commit()
-    
+
     return None
 
 @router.post("/{assignment_id}/submit/typing", status_code=status.HTTP_201_CREATED)
@@ -404,13 +404,13 @@ async def submit_answer_typing(
         .where(Assignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
-    
+
     if not assignment.is_published:
         raise HTTPException(status_code=403, detail="Tugas belum diterbitkan")
-    
+
     result = await db.execute(
         select(ClassParticipant).where(
             ClassParticipant.kelas_id == assignment.kelas_id,
@@ -418,13 +418,13 @@ async def submit_answer_typing(
         )
     )
     is_participant = result.scalar_one_or_none() is not None
-    
+
     if not is_participant:
         raise HTTPException(status_code=403, detail="Tidak punya permission untuk mengumpulkan tugas di kelas ini")
-    
+
     if assignment.deadline and datetime.utcnow() > assignment.deadline:
         raise HTTPException(status_code=400, detail="Batas waktu pengumpulan tugas sudah lewat")
-    
+
     result = await db.execute(
         select(AssignmentSubmission).where(
             AssignmentSubmission.assignment_id == assignment_id,
@@ -432,28 +432,28 @@ async def submit_answer_typing(
         )
     )
     existing_submission = result.scalar_one_or_none()
-    
+
     if existing_submission:
         raise HTTPException(status_code=400, detail="Anda sudah mengumpulkan tugas ini")
-    
+
     assignment_question_ids = {q.id for q in assignment.questions}
     submitted_question_ids = {a.question_id for a in request.answers}
-    
+
     if assignment_question_ids != submitted_question_ids:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Anda harus menjawab semua pertanyaan. Pertanyaan yang hilang atau ekstra terdeteksi."
         )
-    
+
     submission = AssignmentSubmission(
         assignment_id=assignment_id,
         student_id=current_user.id,
         submission_type=SubmissionType.TYPED
     )
-    
+
     db.add(submission)
     await db.flush()
-    
+
     for answer_data in request.answers:
         question_answer = QuestionAnswer(
             submission_id=submission.id,
@@ -461,10 +461,10 @@ async def submit_answer_typing(
             answer_text=answer_data.answer_text
         )
         db.add(question_answer)
-    
+
     await db.commit()
     await db.refresh(submission, ["question_answers"])
-    
+
     # Grade submission using AI tunnel
     try:
         submission_data = {
@@ -489,15 +489,15 @@ async def submit_answer_typing(
                 for qa in submission.question_answers
             ]
         }
-        
+
         grading_result = await grade_submission_batch_via_tunnel(submission_data)
-        
+
         for result_item in grading_result["results"]:
             question_answer = next(
                 (qa for qa in submission.question_answers if qa.question_id == result_item["question_id"]),
                 None
             )
-            
+
             if question_answer:
                 question_answer.final_score = result_item["final_score"]
                 question_answer.feedback = result_item["feedback"]
@@ -509,7 +509,7 @@ async def submit_answer_typing(
                 question_answer.embedding_similarity = result_item["embedding_similarity"]
                 question_answer.llm_time = result_item["llm_time"]
                 question_answer.similarity_time = result_item["similarity_time"]
-        
+
         nilai = Nilai(
             submission_id=submission.id,
             total_score=grading_result["total_score"],
@@ -525,9 +525,9 @@ async def submit_answer_typing(
         )
         db.add(nilai)
         await db.commit()
-        
+
         return {
-            "message": "Answer submitted and graded successfully via AI tunnel", 
+            "message": "Answer submitted and graded successfully via AI tunnel",
             "submission_id": submission.id,
             "total_score": nilai.total_score,
             "max_score": nilai.max_score,
@@ -537,7 +537,7 @@ async def submit_answer_typing(
         print(f"Auto-grading failed: {str(e)}")
         await db.commit()  # Commit the submission even if grading fails
         return {
-            "message": f"Answer submitted successfully (grading failed: {str(e)})", 
+            "message": f"Answer submitted successfully (grading failed: {str(e)})",
             "submission_id": submission.id
         }
 
@@ -554,13 +554,13 @@ async def submit_answer_ocr(
         .where(Assignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
-    
+
     if not assignment.is_published:
         raise HTTPException(status_code=403, detail="Tugas belum diterbitkan")
-    
+
     result = await db.execute(
         select(ClassParticipant).where(
             ClassParticipant.kelas_id == assignment.kelas_id,
@@ -568,13 +568,13 @@ async def submit_answer_ocr(
         )
     )
     is_participant = result.scalar_one_or_none() is not None
-    
+
     if not is_participant:
         raise HTTPException(status_code=403, detail="Tidak punya permission untuk mengumpulkan tugas di kelas ini")
-    
+
     if assignment.deadline and datetime.utcnow() > assignment.deadline:
         raise HTTPException(status_code=400, detail="Batas waktu pengumpulan tugas sudah lewat")
-    
+
     result = await db.execute(
         select(AssignmentSubmission).where(
             AssignmentSubmission.assignment_id == assignment_id,
@@ -582,14 +582,14 @@ async def submit_answer_ocr(
         )
     )
     existing_submission = result.scalar_one_or_none()
-    
+
     if existing_submission:
         raise HTTPException(status_code=400, detail="Anda sudah mengumpulkan tugas ini")
-    
+
     extracted_text = await process_uploaded_file(file)
-    
+
     return {
-        "message": "File processed successfully", 
+        "message": "File processed successfully",
         "extracted_text": extracted_text,
         "questions": [QuestionRead.model_validate(q) for q in assignment.questions],
         "note": "Silakan review teks yang diambil dan kirimkan jawaban menggunakan endpoint typing"
@@ -607,13 +607,13 @@ async def get_assignment_submissions(
         .where(Assignment.id == assignment_id)
     )
     assignment = result.scalar_one_or_none()
-    
+
     if not assignment:
         raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
-    
+
     if assignment.kelas.teacher_id != current_user.id:
         raise HTTPException(status_code=403, detail="Tidak punya permission untuk melihat submission tugas di kelas ini")
-    
+
     result = await db.execute(
         select(AssignmentSubmission)
         .options(
@@ -623,7 +623,7 @@ async def get_assignment_submissions(
         .where(AssignmentSubmission.assignment_id == assignment_id)
     )
     submissions = result.scalars().all()
-    
+
     return [
         SubmissionResponse(
             id=submission.id,
@@ -655,10 +655,10 @@ async def get_my_submission(
         )
     )
     submission = result.scalar_one_or_none()
-    
+
     if not submission:
         return {"submitted": False}
-    
+
     return {
         "submitted": True,
         "submission_id": submission.id,
