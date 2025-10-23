@@ -44,8 +44,6 @@ app.include_router(grading.router, tags=["grading"])
 
 # app.include_router(ocr.router, tags=["ocr"])
 
-handler = app
-
 @app.on_event("startup")
 async def on_startup():
     await create_tables()
