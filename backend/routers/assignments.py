@@ -541,59 +541,59 @@ async def submit_answer_typing(
             "submission_id": submission.id
         }
 
-@router.post("/{assignment_id}/submit/ocr", status_code=status.HTTP_201_CREATED)
-async def submit_answer_ocr(
-    assignment_id: int,
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
-):
-    result = await db.execute(
-        select(Assignment)
-        .options(selectinload(Assignment.kelas), selectinload(Assignment.questions))
-        .where(Assignment.id == assignment_id)
-    )
-    assignment = result.scalar_one_or_none()
+# @router.post("/{assignment_id}/submit/ocr", status_code=status.HTTP_201_CREATED)
+# async def submit_answer_ocr(
+#     assignment_id: int,
+#     file: UploadFile = File(...),
+#     current_user: User = Depends(get_current_user),
+#     db: AsyncSession = Depends(get_session)
+# ):
+#     result = await db.execute(
+#         select(Assignment)
+#         .options(selectinload(Assignment.kelas), selectinload(Assignment.questions))
+#         .where(Assignment.id == assignment_id)
+#     )
+#     assignment = result.scalar_one_or_none()
 
-    if not assignment:
-        raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
+#     if not assignment:
+#         raise HTTPException(status_code=404, detail="Tugas tidak ditemukan")
 
-    if not assignment.is_published:
-        raise HTTPException(status_code=403, detail="Tugas belum diterbitkan")
+#     if not assignment.is_published:
+#         raise HTTPException(status_code=403, detail="Tugas belum diterbitkan")
 
-    result = await db.execute(
-        select(ClassParticipant).where(
-            ClassParticipant.kelas_id == assignment.kelas_id,
-            ClassParticipant.user_id == current_user.id
-        )
-    )
-    is_participant = result.scalar_one_or_none() is not None
+#     result = await db.execute(
+#         select(ClassParticipant).where(
+#             ClassParticipant.kelas_id == assignment.kelas_id,
+#             ClassParticipant.user_id == current_user.id
+#         )
+#     )
+#     is_participant = result.scalar_one_or_none() is not None
 
-    if not is_participant:
-        raise HTTPException(status_code=403, detail="Tidak punya permission untuk mengumpulkan tugas di kelas ini")
+#     if not is_participant:
+#         raise HTTPException(status_code=403, detail="Tidak punya permission untuk mengumpulkan tugas di kelas ini")
 
-    if assignment.deadline and datetime.utcnow() > assignment.deadline:
-        raise HTTPException(status_code=400, detail="Batas waktu pengumpulan tugas sudah lewat")
+#     if assignment.deadline and datetime.utcnow() > assignment.deadline:
+#         raise HTTPException(status_code=400, detail="Batas waktu pengumpulan tugas sudah lewat")
 
-    result = await db.execute(
-        select(AssignmentSubmission).where(
-            AssignmentSubmission.assignment_id == assignment_id,
-            AssignmentSubmission.student_id == current_user.id
-        )
-    )
-    existing_submission = result.scalar_one_or_none()
+#     result = await db.execute(
+#         select(AssignmentSubmission).where(
+#             AssignmentSubmission.assignment_id == assignment_id,
+#             AssignmentSubmission.student_id == current_user.id
+#         )
+#     )
+#     existing_submission = result.scalar_one_or_none()
 
-    if existing_submission:
-        raise HTTPException(status_code=400, detail="Anda sudah mengumpulkan tugas ini")
+#     if existing_submission:
+#         raise HTTPException(status_code=400, detail="Anda sudah mengumpulkan tugas ini")
 
-    extracted_text = await process_uploaded_file(file)
+#     extracted_text = await process_uploaded_file(file)
 
-    return {
-        "message": "File processed successfully",
-        "extracted_text": extracted_text,
-        "questions": [QuestionRead.model_validate(q) for q in assignment.questions],
-        "note": "Silakan review teks yang diambil dan kirimkan jawaban menggunakan endpoint typing"
-    }
+#     return {
+#         "message": "File processed successfully",
+#         "extracted_text": extracted_text,
+#         "questions": [QuestionRead.model_validate(q) for q in assignment.questions],
+#         "note": "Silakan review teks yang diambil dan kirimkan jawaban menggunakan endpoint typing"
+#     }
 
 @router.get("/{assignment_id}/submissions", response_model=List[SubmissionResponse])
 async def get_assignment_submissions(
