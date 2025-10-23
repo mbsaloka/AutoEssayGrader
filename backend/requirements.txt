@@ -23,7 +23,7 @@ passlib[bcrypt]
 # graders ai
 # fastapi
 # uvicorn
-# requests
+requests
 # pydantic
 # bert-score
 # sentence-transformers
