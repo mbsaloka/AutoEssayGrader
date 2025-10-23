@@ -9,6 +9,7 @@ import time
 from typing import Optional
 import torch
 from sentence_transformers import SentenceTransformer, util
+import textwrap
 
 # === Konfigurasi ===
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -92,13 +93,32 @@ Keluarkan hasil dalam format JSON berikut:
 
     coder_prompt = f"""
 Anda adalah sistem penilai jawaban esai pemrograman otomatis.
-Tugas Anda adalah menilai jawaban mahasiswa berdasarkan rubrik berikut secara objektif dan konsisten.
+Tugas Anda adalah menilai kualitas jawaban mahasiswa berdasarkan rubrik berikut **secara objektif, konsisten, dan berbasis bukti dari kode dan penjelasan**.
 
 === RUBRIK PENILAIAN (0–100) ===
-1. Pemahaman Konsep — sejauh mana mahasiswa memahami tujuan kode dan konsep logika yang diminta soal.
-2. Kelengkapan Jawaban — apakah seluruh bagian penting dari kunci jawaban telah diimplementasikan atau dijelaskan.
-3. Kejelasan Bahasa dan Kode — apakah penjelasan mudah dipahami dan kode ditulis dengan struktur yang benar serta rapi.
-4. Analisis / Argumen — sejauh mana mahasiswa menjelaskan alasan logika di balik kodenya, atau menunjukkan pemahaman terhadap kesalahan dan perbaikannya.
+1. **Pemahaman Konsep** — sejauh mana mahasiswa memahami maksud soal dan menerapkan konsep pemrograman yang tepat.
+   - 95–100: Konsep utama dan logika dipahami sepenuhnya.
+   - 70–94: Konsep utama benar, tetapi ada detail minor yang salah.
+   - 40–69: Ada sebagian konsep yang salah diterapkan.
+   - 0–39: Tidak memahami konsep atau logika dasar.
+
+2. **Kelengkapan Jawaban** — apakah semua bagian penting dari kunci jawaban telah dijelaskan atau diimplementasikan dalam kode.
+   - 95–100: Semua elemen utama hadir dan berfungsi.
+   - 70–94: Sebagian besar elemen ada, namun ada 1–2 bagian penting yang hilang.
+   - 40–69: Hanya sebagian kecil dari solusi yang muncul.
+   - 0–39: Hampir tidak ada bagian relevan dari solusi.
+
+3. **Kejelasan Bahasa dan Kode** — apakah penjelasan dan kode tertulis dengan jelas, rapi, serta dapat dipahami tanpa ambiguitas.
+   - 95–100: Struktur kode bersih, indentasi benar, komentar/penjelasan ringkas dan jelas.
+   - 70–94: Sedikit kekurangan pada gaya atau penjelasan.
+   - 40–69: Struktur kode membingungkan atau tidak konsisten.
+   - 0–39: Kode berantakan, sulit dipahami, atau tidak bisa dieksekusi.
+
+4. **Analisis / Argumen** — sejauh mana mahasiswa memberikan penalaran logis, menjelaskan alasannya, atau mengidentifikasi kesalahan dengan benar.
+   - 95–100: Alasan dan logika sangat jelas dan sesuai konsep.
+   - 70–94: Ada penjelasan logis tapi kurang mendalam.
+   - 40–69: Analisis dangkal atau tidak relevan.
+   - 0–39: Tidak ada analisis atau penjelasan sama sekali.
 
 === DATA ===
 Pertanyaan:
@@ -111,26 +131,27 @@ Jawaban Mahasiswa:
 "{student_answer}"
 
 === PETUNJUK PENILAIAN ===
-- Gunakan kunci jawaban sebagai acuan utama, bukan gaya penulisan kode.
-- Jika terdapat kesalahan logika, urutan eksekusi, atau struktur yang tidak sesuai konsep kunci, berikan nilai rendah.
-- Penilaian dilakukan menyeluruh terhadap logika kode dan penjelasan teks.
-- Nilai setiap rubrik antara 0–100 (gunakan dua angka desimal, misalnya 82.75).
+- Gunakan kunci jawaban sebagai referensi utama.
+- Fokus pada **fungsi, logika, dan hasil akhir**, bukan gaya penulisan atau format.
+- Jika kode mahasiswa berbeda gaya tetapi logikanya benar, tetap beri nilai tinggi.
+- Jika logika salah meskipun sintaks benar, nilai rendah.
+- Pertimbangkan baik kode maupun penjelasan dalam setiap rubrik.
+- Berikan nilai setiap rubrik antara **0–100 dengan dua angka desimal** (misal: 85.50).
 
 === PETUNJUK FEEDBACK ===
-- Feedback singkat (1–2 kalimat), namun harus spesifik dan mengacu pada bagian kode atau logika yang kurang tepat.
-- Sebutkan bagian yang sudah benar dan bagian yang perlu diperbaiki.
-- Hindari kalimat generik seperti “jawaban cukup baik” tanpa alasan.
-- Jika kode mahasiswa hampir benar, jelaskan sedikit perbedaan logikanya.
-- Jika ada kesalahan sintaksis atau konsep, sebutkan dengan jelas.
+- Feedback harus singkat (1–3 kalimat), **spesifik dan berbasis bukti dari kode atau logika**.
+- Sebutkan bagian yang benar dan yang perlu diperbaiki.
+- Hindari komentar umum seperti “sudah bagus” tanpa alasan.
+- Jika logika hampir benar, jelaskan perbedaannya dengan kunci jawaban.
+- Jika ada kesalahan konsep atau sintaks, sebutkan secara eksplisit.
 
-=== FORMAT OUTPUT ===
-Keluarkan hasil dalam format JSON berikut:
+=== FORMAT OUTPUT (WAJIB JSON VALID) ===
 {{
-  "pemahaman": float,
-  "kelengkapan": float,
-  "kejelasan": float,
-  "analisis": float,
-  "feedback": string
+  "pemahaman": float,      # skor 0–100
+  "kelengkapan": float,    # skor 0–100
+  "kejelasan": float,      # skor 0–100
+  "analisis": float,       # skor 0–100
+  "feedback": string       # maksimal 3 kalimat, fokus ke aspek penting
 }}
 """
 
@@ -237,7 +258,7 @@ def grade(req: GradeRequest):
 
     # 🔸 1. Panggil Ollama
     try:
-        model_resp, llm_time = call_ollama(prompt, model=req.model)
+        model_resp, llm_time = call_ollama(prompt, model=DEFAULT_MODEL)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -269,8 +290,16 @@ def grade(req: GradeRequest):
     feedback = parsed.get("feedback", "").strip()
 
     # === 🔸 Logging Console ===
+    wrapper = textwrap.TextWrapper(width=80, subsequent_indent=" " * 14)
+
     print("\n" + "="*60)
     print("🧠 BENCHMARK INFERENCE RESULT")
+    print("📝 Question     :", wrapper.fill(req.question if req.question else "(kosong)"))
+    print("🔑 Answer Key   :", wrapper.fill(req.answer_key if req.answer_key else "(kosong)"))
+    print("🎓 Student Answer:", wrapper.fill(req.student_answer if req.student_answer else "(kosong)"))
+    print("="*60)
+    print("📝 LLM Raw Response:")
+    print(model_text)
     print("="*60)
     print(f"📊 Rata-rata Skor LLM       : {llm_score_avg}")
     print(f"📊 Similarity (MiniLM)      : {sim_value}")
@@ -309,14 +338,14 @@ def warmup_models():
         print(f"✅ Ollama Instruct siap (waktu: {round(time.time() - start, 2)} detik)")
     except Exception as e:
         print(f"⚠️ Gagal warm-up Ollama: {e}")
-    try:
-        print("🔹 Warm-up Ollama Coder...")
-        prompt = "Warm-up test: Halo, anda akan menjadi asisten penilai jawaban esai yang objektif, konsisten, dan kritis. Konfirmasikan jika anda siap."
-        start = time.time()
-        call_ollama(prompt, model=CODER_MODEL, timeout=120)
-        print(f"✅ Ollama Coder siap (waktu: {round(time.time() - start, 2)} detik)")
-    except Exception as e:
-        print(f"⚠️ Gagal warm-up Ollama: {e}")
+    # try:
+    #     print("🔹 Warm-up Ollama Coder...")
+    #     prompt = "Warm-up test: Halo, anda akan menjadi asisten penilai jawaban esai yang objektif, konsisten, dan kritis. Konfirmasikan jika anda siap."
+    #     start = time.time()
+    #     call_ollama(prompt, model=CODER_MODEL, timeout=120)
+    #     print(f"✅ Ollama Coder siap (waktu: {round(time.time() - start, 2)} detik)")
+    # except Exception as e:
+    #     print(f"⚠️ Gagal warm-up Ollama: {e}")
 
     # 🔸 Warm-up Embedding Model
     try:
